@@ -21,20 +21,24 @@ public sealed class ChunkRenderCache
     /// <param name="isBuilt">Whether the cache contains valid draw commands.</param>
     /// <param name="lastBuildTick">The monotonic build tick that produced the cache.</param>
     /// <param name="worldPixelBounds">The world-space pixel bounds covered by the chunk.</param>
+    /// <param name="backgroundCommands">The background-wall draw commands generated for the chunk.</param>
     /// <param name="foregroundCommands">The foreground draw commands generated for the chunk.</param>
     public ChunkRenderCache(
         ChunkCoord coord,
         bool isBuilt,
         int lastBuildTick,
         RectI worldPixelBounds,
+        IReadOnlyList<SpriteDrawCommand> backgroundCommands,
         IReadOnlyList<SpriteDrawCommand> foregroundCommands)
     {
+        ArgumentNullException.ThrowIfNull(backgroundCommands);
         ArgumentNullException.ThrowIfNull(foregroundCommands);
 
         Coord = coord;
         IsBuilt = isBuilt;
         LastBuildTick = lastBuildTick;
         WorldPixelBounds = worldPixelBounds;
+        BackgroundCommands = backgroundCommands;
         ForegroundCommands = foregroundCommands;
     }
 
@@ -57,6 +61,11 @@ public sealed class ChunkRenderCache
     /// Gets the world-space pixel bounds covered by the chunk.
     /// </summary>
     public RectI WorldPixelBounds { get; }
+
+    /// <summary>
+    /// Gets the background-wall draw commands generated for the chunk.
+    /// </summary>
+    public IReadOnlyList<SpriteDrawCommand> BackgroundCommands { get; }
 
     /// <summary>
     /// Gets the foreground draw commands generated for the chunk.

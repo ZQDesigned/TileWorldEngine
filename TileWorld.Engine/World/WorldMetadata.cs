@@ -30,7 +30,7 @@ public sealed class WorldMetadata
     /// <summary>
     /// Gets the version number of the chunk payload format expected by this world.
     /// </summary>
-    public int ChunkFormatVersion { get; init; } = 1;
+    public int ChunkFormatVersion { get; init; } = 2;
 
     /// <summary>
     /// Gets the persisted world time counter.

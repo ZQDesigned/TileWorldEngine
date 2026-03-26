@@ -43,6 +43,11 @@ public sealed class TileDef
     public int Hardness { get; init; }
 
     /// <summary>
+    /// Gets the item definition identifier spawned when the tile is broken. A value of <c>0</c> disables drops.
+    /// </summary>
+    public int BreakDropItemId { get; init; }
+
+    /// <summary>
     /// Gets the autotile connectivity group identifier. A value of <c>0</c> disables autotiling.
     /// </summary>
     public ushort AutoTileGroupId { get; init; }

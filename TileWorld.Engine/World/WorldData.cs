@@ -26,7 +26,7 @@ public sealed class WorldData
     /// <summary>
     /// Gets the persistent metadata associated with this world.
     /// </summary>
-    public WorldMetadata Metadata { get; }
+    public WorldMetadata Metadata { get; private set; }
 
     /// <summary>
     /// Gets the number of chunks currently loaded in memory.
@@ -84,11 +84,31 @@ public sealed class WorldData
     }
 
     /// <summary>
+    /// Removes a loaded chunk from memory when present.
+    /// </summary>
+    /// <param name="coord">The chunk coordinate to remove.</param>
+    /// <returns><see langword="true"/> when a loaded chunk was removed.</returns>
+    public bool RemoveChunk(ChunkCoord coord)
+    {
+        return _chunks.Remove(coord);
+    }
+
+    /// <summary>
     /// Enumerates all chunks currently loaded in memory.
     /// </summary>
     /// <returns>The currently loaded chunks.</returns>
     public IEnumerable<Chunk> EnumerateLoadedChunks()
     {
         return _chunks.Values;
+    }
+
+    /// <summary>
+    /// Replaces the persistent metadata associated with this world.
+    /// </summary>
+    /// <param name="metadata">The metadata to store.</param>
+    public void UpdateMetadata(WorldMetadata metadata)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        Metadata = metadata;
     }
 }

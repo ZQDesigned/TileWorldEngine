@@ -1,13 +1,18 @@
+using System;
 using System.Collections.Generic;
+using TileWorld.Engine.Content.Objects;
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Content.Tiles;
+using TileWorld.Engine.Content.Walls;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Runtime.Chunks;
 using TileWorld.Engine.Runtime.Contexts;
+using TileWorld.Engine.Runtime.Objects;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Cells;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
+using TileWorld.Engine.World.Objects;
 
 namespace TileWorld.Engine.Runtime.Queries;
 
@@ -22,6 +27,7 @@ internal sealed class WorldQueryService
 {
     private readonly ContentRegistry _contentRegistry;
     private readonly ChunkManager _chunkManager;
+    private ObjectManager _objectManager;
     private readonly WorldData _worldData;
 
     /// <summary>
@@ -29,12 +35,38 @@ internal sealed class WorldQueryService
     /// </summary>
     /// <param name="worldData">The world data being queried.</param>
     /// <param name="contentRegistry">The registry used to resolve tile definitions.</param>
+    /// <param name="objectManager">The optional object manager used to resolve object occupancy.</param>
     /// <param name="chunkManager">The optional chunk manager used when missing chunks may be loaded on demand.</param>
-    public WorldQueryService(WorldData worldData, ContentRegistry contentRegistry, ChunkManager chunkManager = null)
+    public WorldQueryService(
+        WorldData worldData,
+        ContentRegistry contentRegistry,
+        ObjectManager objectManager = null,
+        ChunkManager chunkManager = null)
     {
         _worldData = worldData;
         _contentRegistry = contentRegistry;
+        _objectManager = objectManager;
         _chunkManager = chunkManager;
+    }
+
+    /// <summary>
+    /// Creates a query service over the supplied world data and content registry with an explicit chunk manager.
+    /// </summary>
+    /// <param name="worldData">The world data being queried.</param>
+    /// <param name="contentRegistry">The registry used to resolve tile definitions.</param>
+    /// <param name="chunkManager">The optional chunk manager used when missing chunks may be loaded on demand.</param>
+    public WorldQueryService(WorldData worldData, ContentRegistry contentRegistry, ChunkManager chunkManager)
+        : this(worldData, contentRegistry, null, chunkManager)
+    {
+    }
+
+    /// <summary>
+    /// Attaches the object manager after runtime construction wiring has completed.
+    /// </summary>
+    /// <param name="objectManager">The object manager that should serve occupancy queries.</param>
+    public void AttachObjectManager(ObjectManager objectManager)
+    {
+        _objectManager = objectManager;
     }
 
     /// <summary>
@@ -87,6 +119,16 @@ internal sealed class WorldQueryService
     }
 
     /// <summary>
+    /// Resolves a wall definition by identifier.
+    /// </summary>
+    /// <param name="wallId">The wall identifier to resolve.</param>
+    /// <returns>The resolved wall definition.</returns>
+    public WallDef GetWallDef(ushort wallId)
+    {
+        return _contentRegistry.GetWallDef(wallId);
+    }
+
+    /// <summary>
     /// Attempts to resolve the foreground tile definition at a world-tile coordinate.
     /// </summary>
     /// <param name="coord">The world-tile coordinate to inspect.</param>
@@ -102,6 +144,24 @@ internal sealed class WorldQueryService
         }
 
         return _contentRegistry.TryGetTileDef(cell.ForegroundTileId, out tileDef);
+    }
+
+    /// <summary>
+    /// Attempts to resolve the background wall definition at a world-tile coordinate.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <param name="wallDef">The resolved background wall definition when present.</param>
+    /// <returns><see langword="true"/> when the coordinate contains a background wall.</returns>
+    public bool TryGetBackgroundWallDef(WorldTileCoord coord, out WallDef wallDef)
+    {
+        var cell = GetCell(coord);
+        if (cell.BackgroundWallId == 0)
+        {
+            wallDef = null!;
+            return false;
+        }
+
+        return _contentRegistry.TryGetWallDef(cell.BackgroundWallId, out wallDef);
     }
 
     /// <summary>
@@ -132,6 +192,16 @@ internal sealed class WorldQueryService
     public bool BlocksLight(WorldTileCoord coord)
     {
         return TryGetForegroundTileDef(coord, out var tileDef) && tileDef.BlocksLight;
+    }
+
+    /// <summary>
+    /// Returns whether the coordinate contains a background wall.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <returns><see langword="true"/> when the cell contains a background wall.</returns>
+    public bool HasBackgroundWall(WorldTileCoord coord)
+    {
+        return GetCell(coord).BackgroundWallId != 0;
     }
 
     /// <summary>
@@ -202,6 +272,33 @@ internal sealed class WorldQueryService
     }
 
     /// <summary>
+    /// Attempts to resolve a placed object instance at a world-tile coordinate.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <param name="instance">The resolved object instance when present.</param>
+    /// <returns><see langword="true"/> when an object occupies the coordinate.</returns>
+    public bool TryGetObjectAt(WorldTileCoord coord, out ObjectInstance instance)
+    {
+        if (_objectManager is not null && _objectManager.TryGetObjectAt(coord, out instance))
+        {
+            return true;
+        }
+
+        instance = null!;
+        return false;
+    }
+
+    /// <summary>
+    /// Returns whether an object occupies the supplied world-tile coordinate.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <returns><see langword="true"/> when an object occupies the coordinate.</returns>
+    public bool IsObjectOccupied(WorldTileCoord coord)
+    {
+        return _objectManager is not null && _objectManager.IsOccupied(coord);
+    }
+
+    /// <summary>
     /// Converts a world-tile coordinate into chunk coordinates.
     /// </summary>
     /// <param name="coord">The world-tile coordinate to convert.</param>
@@ -232,7 +329,7 @@ internal sealed class WorldQueryService
 
         if (_worldData.TryGetChunk(chunkCoord, out chunk!))
         {
-            return true;
+            return options.AllowInactiveChunk || chunk.State != ChunkState.Inactive;
         }
 
         if (options.LoadChunkIfMissing)

@@ -1,18 +1,24 @@
 using System;
+using System.Collections.Generic;
 using TileWorld.Engine.Core.Diagnostics;
+using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Runtime.AutoTile;
 using TileWorld.Engine.Runtime.Chunks;
 using TileWorld.Engine.Runtime.Contexts;
 using TileWorld.Engine.Runtime.Edits;
+using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.Runtime.Events;
+using TileWorld.Engine.Runtime.Objects;
 using TileWorld.Engine.Runtime.Queries;
+using TileWorld.Engine.Runtime.Support;
 using TileWorld.Engine.Runtime.Tracking;
 using TileWorld.Engine.Storage;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Cells;
 using TileWorld.Engine.World.Coordinates;
+using TileWorld.Engine.World.Objects;
 
 namespace TileWorld.Engine.Runtime;
 
@@ -55,14 +61,32 @@ public sealed class WorldRuntime
         WorldData = worldData;
         ContentRegistry = contentRegistry;
         Options = options ?? new WorldRuntimeOptions();
-        Storage = CreateWorldStorage(Options);
-        ChunkManager = CreateChunkManager(worldData, Storage, Options);
-        QueryService = new WorldQueryService(worldData, contentRegistry, ChunkManager);
-        DirtyTracker = new DirtyTracker(worldData);
         EventBus = new WorldEventBus();
         EventBus.Subscribe<TileChangedEvent>(_ => _pendingMutationObserved = true);
+        EventBus.Subscribe<ObjectPlacedEvent>(_ => _pendingMutationObserved = true);
+        EventBus.Subscribe<ObjectRemovedEvent>(_ => _pendingMutationObserved = true);
+
+        Storage = CreateWorldStorage(Options);
+        ChunkManager = CreateChunkManager(worldData, Storage, Options, EventBus);
+        QueryService = new WorldQueryService(worldData, contentRegistry, chunkManager: ChunkManager);
+        DirtyTracker = new DirtyTracker(worldData);
+        EntityManager = new EntityManager(new TileCollisionService(QueryService), contentRegistry, EventBus);
         AutoTileSystem = new AutoTileSystem(worldData, QueryService);
-        TileEditService = new TileEditService(worldData, contentRegistry, QueryService, DirtyTracker, EventBus, AutoTileSystem, ChunkManager);
+        ObjectManager = new ObjectManager(contentRegistry, QueryService, DirtyTracker, EventBus, EntityManager);
+        SupportSystem = new SupportSystem(ObjectManager, QueryService);
+        QueryService.AttachObjectManager(ObjectManager);
+        ChunkManager?.AttachObjectManager(ObjectManager);
+        TileEditService = new TileEditService(
+            worldData,
+            contentRegistry,
+            QueryService,
+            DirtyTracker,
+            EventBus,
+            AutoTileSystem,
+            ObjectManager,
+            SupportSystem,
+            EntityManager,
+            ChunkManager);
     }
 
     /// <summary>
@@ -104,7 +128,13 @@ public sealed class WorldRuntime
 
     internal AutoTileSystem AutoTileSystem { get; }
 
+    internal SupportSystem SupportSystem { get; }
+
+    internal ObjectManager ObjectManager { get; }
+
     internal TileEditService TileEditService { get; }
+
+    internal EntityManager EntityManager { get; }
 
     /// <summary>
     /// Transitions the runtime into the initialized state.
@@ -126,6 +156,7 @@ public sealed class WorldRuntime
         }
 
         _lastObservedUpdateTime = frameTime.TotalTime;
+        EntityManager.Update(frameTime);
         if (_pendingMutationObserved)
         {
             _lastMutationTime = frameTime.TotalTime;
@@ -179,6 +210,37 @@ public sealed class WorldRuntime
     public bool IsSolid(WorldTileCoord coord)
     {
         return QueryService.IsSolid(coord);
+    }
+
+    /// <summary>
+    /// Returns whether the supplied coordinate contains a background wall.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <returns><see langword="true"/> when a background wall is present.</returns>
+    public bool HasBackgroundWall(WorldTileCoord coord)
+    {
+        return QueryService.HasBackgroundWall(coord);
+    }
+
+    /// <summary>
+    /// Writes a background wall directly to the world.
+    /// </summary>
+    /// <param name="coord">The target world-tile coordinate.</param>
+    /// <param name="wallId">The non-empty wall identifier to write.</param>
+    /// <returns><see langword="true"/> when the write succeeds.</returns>
+    public bool SetBackgroundWall(WorldTileCoord coord, ushort wallId)
+    {
+        return TileEditService.SetBackgroundWall(coord, wallId);
+    }
+
+    /// <summary>
+    /// Removes the background wall at the supplied coordinate.
+    /// </summary>
+    /// <param name="coord">The target world-tile coordinate.</param>
+    /// <returns><see langword="true"/> when a background wall existed and was removed.</returns>
+    public bool RemoveBackgroundWall(WorldTileCoord coord)
+    {
+        return TileEditService.RemoveBackgroundWall(coord);
     }
 
     /// <summary>
@@ -243,6 +305,18 @@ public sealed class WorldRuntime
     }
 
     /// <summary>
+    /// Loads or creates a chunk and returns detailed source information.
+    /// </summary>
+    /// <param name="coord">The chunk coordinate to load or create.</param>
+    /// <returns>The detailed chunk load result.</returns>
+    public ChunkLoadResult LoadChunk(ChunkCoord coord)
+    {
+        return ChunkManager is not null
+            ? ChunkManager.GetOrLoadChunkDetailed(coord)
+            : new ChunkLoadResult(WorldData.GetOrCreateChunk(coord), true, false, false);
+    }
+
+    /// <summary>
     /// Attempts to resolve a chunk that is already loaded in memory.
     /// </summary>
     /// <param name="coord">The chunk coordinate to inspect.</param>
@@ -251,6 +325,150 @@ public sealed class WorldRuntime
     public bool TryGetLoadedChunk(ChunkCoord coord, out World.Chunks.Chunk chunk)
     {
         return WorldData.TryGetChunk(coord, out chunk!);
+    }
+
+    /// <summary>
+    /// Ensures the active chunk set around the supplied world-tile coordinate.
+    /// </summary>
+    /// <param name="center">The world-tile coordinate that should remain centered in the active set.</param>
+    public void EnsureActiveAround(WorldTileCoord center)
+    {
+        ChunkManager?.EnsureActiveAround(center);
+    }
+
+    /// <summary>
+    /// Enumerates the currently active chunk coordinates.
+    /// </summary>
+    /// <returns>The active chunk coordinates.</returns>
+    public IEnumerable<ChunkCoord> GetActiveChunks()
+    {
+        return ChunkManager?.GetActiveChunks() ?? [];
+    }
+
+    /// <summary>
+    /// Evaluates whether an object placement would currently succeed.
+    /// </summary>
+    /// <param name="anchorCoord">The logical object anchor coordinate.</param>
+    /// <param name="objectDefId">The object definition identifier to place.</param>
+    /// <param name="context">Placement metadata and behavior flags.</param>
+    /// <returns><see langword="true"/> when placement would currently succeed.</returns>
+    public bool CanPlaceObject(WorldTileCoord anchorCoord, int objectDefId, ObjectPlacementContext context)
+    {
+        return ObjectManager.CanPlaceObject(anchorCoord, objectDefId, context, SupportSystem);
+    }
+
+    /// <summary>
+    /// Places an object instance into the world.
+    /// </summary>
+    /// <param name="anchorCoord">The logical object anchor coordinate.</param>
+    /// <param name="objectDefId">The object definition identifier to place.</param>
+    /// <param name="context">Placement metadata and behavior flags.</param>
+    /// <returns>The outcome of the placement attempt.</returns>
+    public ObjectPlacementResult PlaceObject(WorldTileCoord anchorCoord, int objectDefId, ObjectPlacementContext context)
+    {
+        if (ChunkManager is not null &&
+            ContentRegistry.TryGetObjectDef(objectDefId, out var objectDef))
+        {
+            var origin = ObjectManager.GetFootprintOrigin(anchorCoord, objectDef);
+            var minChunk = WorldCoordinateConverter.ToChunkCoord(new WorldTileCoord(origin.X, origin.Y));
+            var maxChunk = WorldCoordinateConverter.ToChunkCoord(new WorldTileCoord(
+                origin.X + objectDef.SizeInTiles.X - 1,
+                origin.Y + objectDef.SizeInTiles.Y - 1));
+
+            for (var chunkY = minChunk.Y; chunkY <= maxChunk.Y; chunkY++)
+            {
+                for (var chunkX = minChunk.X; chunkX <= maxChunk.X; chunkX++)
+                {
+                    ChunkManager.GetOrLoadChunk(new ChunkCoord(chunkX, chunkY));
+                }
+            }
+        }
+
+        return ObjectManager.PlaceObject(anchorCoord, objectDefId, context, SupportSystem);
+    }
+
+    /// <summary>
+    /// Removes an object instance from the world.
+    /// </summary>
+    /// <param name="objectInstanceId">The object instance identifier to remove.</param>
+    /// <param name="destroyed">Whether the removal should be treated as destruction.</param>
+    /// <returns><see langword="true"/> when the object instance existed and was removed.</returns>
+    public bool RemoveObject(int objectInstanceId, bool destroyed = true)
+    {
+        return ObjectManager.RemoveObject(objectInstanceId, destroyed, spawnDrop: destroyed, publishEvents: true);
+    }
+
+    /// <summary>
+    /// Resolves an object instance by identifier.
+    /// </summary>
+    /// <param name="objectInstanceId">The object instance identifier to resolve.</param>
+    /// <returns>The resolved object instance.</returns>
+    public ObjectInstance GetObject(int objectInstanceId)
+    {
+        return ObjectManager.GetObject(objectInstanceId);
+    }
+
+    /// <summary>
+    /// Attempts to resolve an object instance by identifier.
+    /// </summary>
+    /// <param name="objectInstanceId">The object instance identifier to resolve.</param>
+    /// <param name="instance">The resolved object instance when present.</param>
+    /// <returns><see langword="true"/> when the instance exists.</returns>
+    public bool TryGetObject(int objectInstanceId, out ObjectInstance instance)
+    {
+        return ObjectManager.TryGetObject(objectInstanceId, out instance);
+    }
+
+    /// <summary>
+    /// Attempts to resolve an object instance occupying a world-tile coordinate.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <param name="instance">The resolved object instance when present.</param>
+    /// <returns><see langword="true"/> when an object occupies the coordinate.</returns>
+    public bool TryGetObjectAt(WorldTileCoord coord, out ObjectInstance instance)
+    {
+        return QueryService.TryGetObjectAt(coord, out instance);
+    }
+
+    /// <summary>
+    /// Spawns a controllable player prototype at the supplied world position in tile units.
+    /// </summary>
+    /// <param name="position">The player spawn position in world tile units.</param>
+    /// <returns>The created player entity identifier.</returns>
+    public int SpawnPlayer(Float2 position)
+    {
+        return EntityManager.SpawnPlayer(position);
+    }
+
+    /// <summary>
+    /// Applies movement input to a player entity for the next update.
+    /// </summary>
+    /// <param name="entityId">The target player entity identifier.</param>
+    /// <param name="moveAxis">The horizontal movement axis in the range [-1, 1].</param>
+    /// <param name="jumpRequested">Whether a jump should be attempted.</param>
+    public void SetPlayerInput(int entityId, float moveAxis, bool jumpRequested)
+    {
+        EntityManager.SetPlayerInput(entityId, moveAxis, jumpRequested);
+    }
+
+    /// <summary>
+    /// Attempts to resolve an entity by identifier.
+    /// </summary>
+    /// <param name="entityId">The entity identifier to resolve.</param>
+    /// <param name="entity">The resolved entity when present.</param>
+    /// <returns><see langword="true"/> when the entity exists.</returns>
+    public bool TryGetEntity(int entityId, out Entity entity)
+    {
+        return EntityManager.TryGetEntity(entityId, out entity);
+    }
+
+    /// <summary>
+    /// Enumerates all active prototype entities.
+    /// </summary>
+    /// <returns>The active entities.</returns>
+    public IEnumerable<Entity> EnumerateEntities()
+    {
+        return EntityManager.EnumerateEntities();
     }
 
     /// <summary>
@@ -284,6 +502,7 @@ public sealed class WorldRuntime
             return 0;
         }
 
+        NormalizeMetadataBeforeSave();
         Storage.SaveMetadata(Options.WorldPath, WorldData.Metadata);
         var savedChunkCount = ChunkManager.SaveDirtyChunks();
         _lastSaveTime = _lastObservedUpdateTime;
@@ -296,6 +515,31 @@ public sealed class WorldRuntime
         return savedChunkCount;
     }
 
+    private void NormalizeMetadataBeforeSave()
+    {
+        var metadata = WorldData.Metadata;
+        if (metadata.ChunkFormatVersion == 2 &&
+            metadata.ChunkWidth == World.Chunks.ChunkDimensions.Width &&
+            metadata.ChunkHeight == World.Chunks.ChunkDimensions.Height)
+        {
+            return;
+        }
+
+        WorldData.UpdateMetadata(new WorldMetadata
+        {
+            WorldId = metadata.WorldId,
+            Name = metadata.Name,
+            Seed = metadata.Seed,
+            WorldFormatVersion = metadata.WorldFormatVersion,
+            ChunkFormatVersion = 2,
+            WorldTime = metadata.WorldTime,
+            BoundsMode = metadata.BoundsMode,
+            SpawnTile = metadata.SpawnTile,
+            ChunkWidth = World.Chunks.ChunkDimensions.Width,
+            ChunkHeight = World.Chunks.ChunkDimensions.Height
+        });
+    }
+
     private static WorldStorage CreateWorldStorage(WorldRuntimeOptions options)
     {
         return !string.IsNullOrWhiteSpace(options.WorldPath)
@@ -303,10 +547,14 @@ public sealed class WorldRuntime
             : null;
     }
 
-    private static ChunkManager CreateChunkManager(WorldData worldData, WorldStorage storage, WorldRuntimeOptions options)
+    private static ChunkManager CreateChunkManager(
+        WorldData worldData,
+        WorldStorage storage,
+        WorldRuntimeOptions options,
+        WorldEventBus eventBus)
     {
         return storage is not null
-            ? new ChunkManager(worldData, storage, options.WorldPath)
+            ? new ChunkManager(worldData, storage, options.WorldPath, options.ActiveRadiusInChunks, eventBus)
             : null;
     }
 

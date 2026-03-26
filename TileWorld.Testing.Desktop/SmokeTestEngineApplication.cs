@@ -1,7 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using TileWorld.Engine.Content.Items;
+using TileWorld.Engine.Content.Objects;
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Content.Tiles;
+using TileWorld.Engine.Content.Walls;
 using TileWorld.Engine.Core.Diagnostics;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Hosting;
@@ -13,8 +18,8 @@ using TileWorld.Engine.Runtime.Events;
 using TileWorld.Engine.Runtime.Operations;
 using TileWorld.Engine.Storage;
 using TileWorld.Engine.World;
-using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
+using TileWorld.Engine.World.Objects;
 
 namespace TileWorld.Testing.Desktop;
 
@@ -24,9 +29,22 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
     private const ushort StoneTileId = 1;
     private const ushort DirtTileId = 2;
     private const ushort BrickTileId = 3;
-    private const double CameraSpeedPixelsPerSecond = 240d;
-    private const double CameraSpeedBoostMultiplier = 3d;
-
+    private const ushort StoneWallId = 1;
+    private const ushort DirtWallId = 2;
+    private const ushort BrickWallId = 3;
+    private const int CrateObjectDefId = 100;
+    private const int BenchObjectDefId = 101;
+    private const int LampObjectDefId = 102;
+    private const int StoneBlockItemId = 1001;
+    private const int DirtBlockItemId = 1002;
+    private const int BrickBlockItemId = 1003;
+    private const int CrateItemId = 2001;
+    private const int BenchItemId = 2002;
+    private const int LampItemId = 2003;
+    private readonly ushort[] _tilePalette = [StoneTileId, DirtTileId, BrickTileId];
+    private readonly ushort[] _wallPalette = [StoneWallId, DirtWallId, BrickWallId];
+    private readonly int[] _objectPalette = [CrateObjectDefId, BenchObjectDefId, LampObjectDefId];
+    private readonly Dictionary<int, int> _collectedItemCounts = new();
     private DebugOverlayRenderer _debugOverlayRenderer = null!;
     private FrameInput _lastFrameInput = FrameInput.Empty;
     private bool _isInitialized;
@@ -34,8 +52,10 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
     private bool _isNewWorld;
     private Camera2D _camera = null!;
     private ContentRegistry _contentRegistry = null!;
+    private int _playerEntityId;
     private WorldRenderSettings _renderSettings = null!;
-    private ushort _selectedTileId = StoneTileId;
+    private int _selectedPaletteIndex;
+    private ToolMode _toolMode = ToolMode.Tile;
     private string _worldPath = string.Empty;
     private WorldRenderer _worldRenderer = null!;
     private WorldRuntime _worldRuntime = null!;
@@ -50,63 +70,17 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
         _contentRegistry = new ContentRegistry();
         _renderSettings = new WorldRenderSettings();
         _debugOverlayRenderer = new DebugOverlayRenderer(_renderSettings);
-        _worldPath = Path.Combine(AppContext.BaseDirectory, "Worlds", "smoke-test-world");
-        _contentRegistry.RegisterTile(new TileDef
-        {
-            Id = StoneTileId,
-            Name = "Stone",
-            Category = "Terrain",
-            IsSolid = true,
-            BlocksLight = true,
-            CanBeMined = true,
-            Hardness = 1,
-            AutoTileGroupId = 1,
-            Visual = new TileVisualDef(
-                DebugWhiteTextureKey,
-                new RectI(0, 0, 1, 1),
-                new ColorRgba32(125, 125, 125),
-                false)
-        });
-        _contentRegistry.RegisterTile(new TileDef
-        {
-            Id = DirtTileId,
-            Name = "Dirt",
-            Category = "Terrain",
-            IsSolid = true,
-            BlocksLight = true,
-            CanBeMined = true,
-            Hardness = 1,
-            AutoTileGroupId = 2,
-            Visual = new TileVisualDef(
-                DebugWhiteTextureKey,
-                new RectI(0, 0, 1, 1),
-                new ColorRgba32(139, 103, 68),
-                false)
-        });
-        _contentRegistry.RegisterTile(new TileDef
-        {
-            Id = BrickTileId,
-            Name = "Brick",
-            Category = "Terrain",
-            IsSolid = true,
-            BlocksLight = true,
-            CanBeMined = true,
-            Hardness = 1,
-            AutoTileGroupId = 3,
-            Visual = new TileVisualDef(
-                DebugWhiteTextureKey,
-                new RectI(0, 0, 1, 1),
-                new ColorRgba32(180, 70, 60),
-                false)
-        });
+        _worldPath = Path.Combine(AppContext.BaseDirectory, "Worlds", "phase-two-sandbox-world");
+        RegisterContent();
 
         var worldStorage = new WorldStorage();
         _isNewWorld = !worldStorage.HasWorld(_worldPath);
         var metadata = _isNewWorld
             ? new WorldMetadata
             {
-                WorldId = "smoke-test-world",
-                Name = "Smoke Test World"
+                WorldId = "phase-two-sandbox-world",
+                Name = "Phase Two Sandbox",
+                SpawnTile = new Int2(4, 18)
             }
             : worldStorage.LoadMetadata(_worldPath);
 
@@ -121,32 +95,27 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
                 EnableAutoSave = true,
                 AutoSaveInterval = TimeSpan.FromSeconds(30),
                 AutoSaveIdleDelay = TimeSpan.FromSeconds(4),
-                MinimumAutoSaveSpacing = TimeSpan.FromSeconds(8)
+                MinimumAutoSaveSpacing = TimeSpan.FromSeconds(8),
+                ActiveRadiusInChunks = 2
             });
-        _camera = new Camera2D(new Int2(-160, 144), new Int2(800, 480));
+        _camera = new Camera2D(new Int2(0, 0), new Int2(800, 480));
         _worldRenderer = new WorldRenderer(
             _camera,
             new ChunkRenderCacheBuilder(_contentRegistry, _renderSettings),
             _renderSettings);
-        _worldRuntime.Subscribe<TileChangedEvent>(evt =>
-            EngineDiagnostics.Info($"TileChanged: Coord={evt.Coord}, Old={evt.OldTileId}, New={evt.NewTileId}"));
-        _worldRuntime.Subscribe<TilePlacedEvent>(evt =>
-            EngineDiagnostics.Info($"TilePlaced: Coord={evt.Coord}, Tile={evt.TileId}, Source={evt.Source}"));
-        _worldRuntime.Subscribe<TileBrokenEvent>(evt =>
-            EngineDiagnostics.Info($"TileBroken: Coord={evt.Coord}, Previous={evt.PreviousTileId}, Source={evt.Source}"));
+
+        SubscribeDiagnostics();
 
         _worldRuntime.Initialize();
         if (_isNewWorld)
         {
-            PopulateSmokeTerrain();
-        }
-        else
-        {
-            EnsureVisibleSmokeChunksLoaded();
+            PopulateSmokeWorld();
         }
 
+        EnsureSpawnAreaLoaded(metadata.SpawnTile);
+        _playerEntityId = _worldRuntime.SpawnPlayer(new Float2(metadata.SpawnTile.X + 0.5f, metadata.SpawnTile.Y - 1.95f));
+        UpdateCameraFromPlayer();
         LogInitializationSummary(metadata);
-
         _isInitialized = true;
     }
 
@@ -158,12 +127,13 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
         }
 
         _lastFrameInput = input ?? FrameInput.Empty;
-        _worldRuntime.Update(frameTime);
-        UpdateSelectedTile(input);
+        UpdateToolSelection(input);
         UpdateDebugOverlayToggle(input);
-        UpdateCamera(frameTime, input);
-        UpdateManualSave(frameTime, input);
-        UpdateTileEdits(input);
+        UpdatePlayerControl(input);
+        _worldRuntime.Update(frameTime);
+        UpdateCameraFromPlayer();
+        UpdateManualSave(input);
+        UpdateWorldEdits(input);
     }
 
     public void Render(IRenderContext renderContext)
@@ -185,7 +155,8 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
                 _camera,
                 _lastFrameInput,
                 renderContext,
-                _selectedTileId);
+                GetSelectedTileIdForOverlay(),
+                GetSelectionLabel());
         }
     }
 
@@ -202,31 +173,220 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
         _isDebugOverlayEnabled = true;
         _isNewWorld = false;
         _lastFrameInput = FrameInput.Empty;
-        _selectedTileId = StoneTileId;
+        _selectedPaletteIndex = 0;
+        _toolMode = ToolMode.Tile;
+        _playerEntityId = 0;
+        _collectedItemCounts.Clear();
     }
 
-    private void PopulateSmokeTerrain()
+    private void RegisterContent()
     {
-        var placementContext = new TilePlacementContext
+        RegisterTileDefs();
+        RegisterWallDefs();
+        RegisterItemDefs();
+        RegisterObjectDefs();
+    }
+
+    private void RegisterTileDefs()
+    {
+        _contentRegistry.RegisterTile(new TileDef
+        {
+            Id = StoneTileId,
+            Name = "Stone",
+            Category = "Terrain",
+            IsSolid = true,
+            BlocksLight = true,
+            CanBeMined = true,
+            Hardness = 1,
+            BreakDropItemId = StoneBlockItemId,
+            AutoTileGroupId = 1,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(125, 125, 125), false)
+        });
+        _contentRegistry.RegisterTile(new TileDef
+        {
+            Id = DirtTileId,
+            Name = "Dirt",
+            Category = "Terrain",
+            IsSolid = true,
+            BlocksLight = true,
+            CanBeMined = true,
+            Hardness = 1,
+            BreakDropItemId = DirtBlockItemId,
+            AutoTileGroupId = 2,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(139, 103, 68), false)
+        });
+        _contentRegistry.RegisterTile(new TileDef
+        {
+            Id = BrickTileId,
+            Name = "Brick",
+            Category = "Terrain",
+            IsSolid = true,
+            BlocksLight = true,
+            CanBeMined = true,
+            Hardness = 1,
+            BreakDropItemId = BrickBlockItemId,
+            AutoTileGroupId = 3,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(180, 70, 60), false)
+        });
+    }
+
+    private void RegisterWallDefs()
+    {
+        _contentRegistry.RegisterWall(new WallDef
+        {
+            Id = StoneWallId,
+            Name = "Stone Wall",
+            AutoTileGroupId = 0,
+            CountsAsRoomWall = true,
+            ObscuresBackground = true,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(110, 110, 110, 160), false)
+        });
+        _contentRegistry.RegisterWall(new WallDef
+        {
+            Id = DirtWallId,
+            Name = "Dirt Wall",
+            AutoTileGroupId = 0,
+            CountsAsRoomWall = true,
+            ObscuresBackground = true,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(117, 88, 58, 155), false)
+        });
+        _contentRegistry.RegisterWall(new WallDef
+        {
+            Id = BrickWallId,
+            Name = "Brick Wall",
+            AutoTileGroupId = 0,
+            CountsAsRoomWall = true,
+            ObscuresBackground = true,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(148, 52, 44, 170), false)
+        });
+    }
+
+    private void RegisterItemDefs()
+    {
+        _contentRegistry.RegisterItem(new ItemDef
+        {
+            Id = StoneBlockItemId,
+            Name = "Stone Block",
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(125, 125, 125), false)
+        });
+        _contentRegistry.RegisterItem(new ItemDef
+        {
+            Id = DirtBlockItemId,
+            Name = "Dirt Block",
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(139, 103, 68), false)
+        });
+        _contentRegistry.RegisterItem(new ItemDef
+        {
+            Id = BrickBlockItemId,
+            Name = "Brick Block",
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(180, 70, 60), false)
+        });
+        _contentRegistry.RegisterItem(new ItemDef
+        {
+            Id = CrateItemId,
+            Name = "Crate",
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(194, 138, 68), false)
+        });
+        _contentRegistry.RegisterItem(new ItemDef
+        {
+            Id = BenchItemId,
+            Name = "Bench",
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(181, 145, 102), false)
+        });
+        _contentRegistry.RegisterItem(new ItemDef
+        {
+            Id = LampItemId,
+            Name = "Lamp",
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(255, 227, 117), false)
+        });
+    }
+
+    private void RegisterObjectDefs()
+    {
+        _contentRegistry.RegisterObject(new ObjectDef
+        {
+            Id = CrateObjectDefId,
+            Name = "Crate",
+            SizeInTiles = new Int2(2, 2),
+            RequiresSupport = true,
+            BreakDropItemId = CrateItemId,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(194, 138, 68), false)
+        });
+        _contentRegistry.RegisterObject(new ObjectDef
+        {
+            Id = BenchObjectDefId,
+            Name = "Bench",
+            SizeInTiles = new Int2(3, 2),
+            RequiresSupport = true,
+            BreakDropItemId = BenchItemId,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(181, 145, 102), false)
+        });
+        _contentRegistry.RegisterObject(new ObjectDef
+        {
+            Id = LampObjectDefId,
+            Name = "Lamp",
+            SizeInTiles = new Int2(1, 3),
+            RequiresSupport = true,
+            BreakDropItemId = LampItemId,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(255, 227, 117), false)
+        });
+    }
+
+    private void SubscribeDiagnostics()
+    {
+        _worldRuntime.Subscribe<TileChangedEvent>(evt =>
+            EngineDiagnostics.Info($"TileChanged: Coord={evt.Coord}, Old={evt.OldTileId}, New={evt.NewTileId}"));
+        _worldRuntime.Subscribe<TilePlacedEvent>(evt =>
+            EngineDiagnostics.Info($"TilePlaced: Coord={evt.Coord}, Tile={evt.TileId}, Source={evt.Source}"));
+        _worldRuntime.Subscribe<TileBrokenEvent>(evt =>
+            EngineDiagnostics.Info($"TileBroken: Coord={evt.Coord}, Previous={evt.PreviousTileId}, Source={evt.Source}"));
+        _worldRuntime.Subscribe<ObjectPlacedEvent>(evt =>
+            EngineDiagnostics.Info($"ObjectPlaced: Instance={evt.ObjectInstanceId}, Def={evt.ObjectDefId}, Anchor={evt.AnchorCoord}."));
+        _worldRuntime.Subscribe<ObjectRemovedEvent>(evt =>
+            EngineDiagnostics.Info($"ObjectRemoved: Instance={evt.ObjectInstanceId}, Def={evt.ObjectDefId}, Anchor={evt.AnchorCoord}, Destroyed={evt.Destroyed}."));
+        _worldRuntime.Subscribe<ChunkLoadedEvent>(evt =>
+            EngineDiagnostics.Info($"ChunkLoaded: Coord={evt.Coord}, FromDisk={evt.LoadedFromDisk}, CreatedNew={evt.CreatedNew}."));
+        _worldRuntime.Subscribe<ChunkActivatedEvent>(evt =>
+            EngineDiagnostics.Info($"ChunkActivated: Coord={evt.Coord}."));
+        _worldRuntime.Subscribe<ChunkUnloadingEvent>(evt =>
+            EngineDiagnostics.Info($"ChunkUnloading: Coord={evt.Coord}."));
+        _worldRuntime.Subscribe<DropCollectedEvent>(evt =>
+        {
+            _collectedItemCounts.TryGetValue(evt.ItemDefId, out var count);
+            _collectedItemCounts[evt.ItemDefId] = count + evt.Amount;
+            EngineDiagnostics.Info(
+                $"DropCollected: Item={evt.ItemDefId}, Collector={evt.CollectorEntityId}, Amount={evt.Amount}, Total={_collectedItemCounts[evt.ItemDefId]}.");
+        });
+    }
+
+    private void PopulateSmokeWorld()
+    {
+        var tilePlacement = new TilePlacementContext
+        {
+            ActorEntityId = 0,
+            Source = PlacementSource.WorldGeneration,
+            SuppressEvents = true
+        };
+        var objectPlacement = new ObjectPlacementContext
         {
             ActorEntityId = 0,
             Source = PlacementSource.WorldGeneration,
             SuppressEvents = true
         };
 
-        for (var tileX = -32; tileX < 64; tileX++)
+        for (var tileX = -64; tileX < 96; tileX++)
         {
             for (var tileY = 26; tileY < 40; tileY++)
             {
-                _worldRuntime.PlaceTile(new WorldTileCoord(tileX, tileY), StoneTileId, placementContext);
+                _worldRuntime.PlaceTile(new WorldTileCoord(tileX, tileY), StoneTileId, tilePlacement);
             }
         }
 
-        for (var tileX = -20; tileX <= 12; tileX++)
+        for (var tileX = -20; tileX <= 14; tileX++)
         {
             for (var tileY = 22; tileY <= 25; tileY++)
             {
-                _worldRuntime.PlaceTile(new WorldTileCoord(tileX, tileY), DirtTileId, placementContext);
+                _worldRuntime.PlaceTile(new WorldTileCoord(tileX, tileY), DirtTileId, tilePlacement);
             }
         }
 
@@ -234,70 +394,98 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
         {
             for (var tileY = 18; tileY <= 19; tileY++)
             {
-                _worldRuntime.PlaceTile(new WorldTileCoord(tileX, tileY), BrickTileId, placementContext);
+                _worldRuntime.PlaceTile(new WorldTileCoord(tileX, tileY), BrickTileId, tilePlacement);
             }
         }
+
+        for (var tileX = 4; tileX <= 12; tileX++)
+        {
+            for (var tileY = 20; tileY <= 25; tileY++)
+            {
+                _worldRuntime.SetBackgroundWall(new WorldTileCoord(tileX, tileY), StoneWallId);
+            }
+        }
+
+        for (var tileX = 30; tileX <= 34; tileX++)
+        {
+            for (var tileY = 15; tileY <= 17; tileY++)
+            {
+                _worldRuntime.SetBackgroundWall(new WorldTileCoord(tileX, tileY), BrickWallId);
+            }
+        }
+
+        _worldRuntime.PlaceObject(new WorldTileCoord(6, 24), CrateObjectDefId, objectPlacement);
+        _worldRuntime.PlaceObject(new WorldTileCoord(31, 16), BenchObjectDefId, objectPlacement);
+        _worldRuntime.PlaceObject(new WorldTileCoord(-6, 19), LampObjectDefId, objectPlacement);
+        _worldRuntime.SaveWorld();
     }
 
-    private void EnsureVisibleSmokeChunksLoaded()
+    private void EnsureSpawnAreaLoaded(Int2 spawnTile)
     {
-        if (!_worldRuntime.IsPersistenceEnabled)
-        {
-            return;
-        }
-
-        foreach (var chunkCoord in _worldRenderer.GetVisibleChunkCoords())
-        {
-            _worldRuntime.EnsureChunkLoaded(chunkCoord);
-        }
+        _worldRuntime.EnsureActiveAround(new WorldTileCoord(spawnTile.X, spawnTile.Y));
     }
 
     private void LogInitializationSummary(WorldMetadata metadata)
     {
-        var leftCell = _worldRuntime.GetCell(new WorldTileCoord(-32, 26));
-        var centerCell = _worldRuntime.GetCell(new WorldTileCoord(0, 26));
-        var rightCell = _worldRuntime.GetCell(new WorldTileCoord(63, 26));
-        var restoredCell = _worldRuntime.GetCell(
-            new WorldTileCoord(10, 24),
-            new QueryOptions { LoadChunkIfMissing = true });
-        var restoredBridgeCell = _worldRuntime.GetCell(
-            new WorldTileCoord(31, 18),
-            new QueryOptions { LoadChunkIfMissing = true });
-
+        var spawnCell = _worldRuntime.GetCell(new WorldTileCoord(metadata.SpawnTile.X, metadata.SpawnTile.Y + 8));
         EngineDiagnostics.Info(
-            $"Smoke application initialized. World='{metadata.Name}', LoadedChunks={_worldRuntime.WorldData.LoadedChunkCount}, " +
-            $"Mode={(_isNewWorld ? "Created" : "Loaded")}, Camera={_camera.GetWorldViewBounds()}, " +
-            $"LeftVariant={leftCell.Variant}, CenterVariant={centerCell.Variant}, RightVariant={rightCell.Variant}, " +
-            $"RestoredTile10x24={restoredCell.ForegroundTileId}, RestoredVariant10x24={restoredCell.Variant}, " +
-            $"RestoredBridge31x18={restoredBridgeCell.ForegroundTileId}.");
+            $"Smoke application initialized. World='{metadata.Name}', Mode={(_isNewWorld ? "Created" : "Loaded")}, " +
+            $"LoadedChunks={_worldRuntime.WorldData.LoadedChunkCount}, SpawnTile={metadata.SpawnTile}, SpawnGround={spawnCell.ForegroundTileId}, " +
+            $"Selection={GetSelectionLabel()}.");
     }
 
-    private void UpdateSelectedTile(FrameInput input)
+    private void UpdateToolSelection(FrameInput input)
     {
         if (input.KeyWentDown(InputKey.D1))
         {
-            SetSelectedTile(StoneTileId);
+            SetSelectedPaletteIndex(0);
         }
         else if (input.KeyWentDown(InputKey.D2))
         {
-            SetSelectedTile(DirtTileId);
+            SetSelectedPaletteIndex(1);
         }
         else if (input.KeyWentDown(InputKey.D3))
         {
-            SetSelectedTile(BrickTileId);
+            SetSelectedPaletteIndex(2);
+        }
+
+        if (input.MouseWheelDelta > 0)
+        {
+            CycleToolMode(1);
+        }
+        else if (input.MouseWheelDelta < 0)
+        {
+            CycleToolMode(-1);
         }
     }
 
-    private void SetSelectedTile(ushort tileId)
+    private void SetSelectedPaletteIndex(int paletteIndex)
     {
-        if (_selectedTileId == tileId)
+        if (_selectedPaletteIndex == paletteIndex)
         {
             return;
         }
 
-        _selectedTileId = tileId;
-        var tileName = _contentRegistry.GetTileDef(tileId).Name;
-        EngineDiagnostics.Info($"Selected tile changed. Id={tileId}, Name={tileName}.");
+        _selectedPaletteIndex = paletteIndex;
+        EngineDiagnostics.Info($"Selection changed: {GetSelectionLabel()}.");
+    }
+
+    private void CycleToolMode(int direction)
+    {
+        var nextValue = ((int)_toolMode + direction) % 3;
+        if (nextValue < 0)
+        {
+            nextValue += 3;
+        }
+
+        var nextMode = (ToolMode)nextValue;
+        if (nextMode == _toolMode)
+        {
+            return;
+        }
+
+        _toolMode = nextMode;
+        EngineDiagnostics.Info($"Tool mode changed: {GetSelectionLabel()}.");
     }
 
     private void UpdateDebugOverlayToggle(FrameInput input)
@@ -311,7 +499,44 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
         EngineDiagnostics.Info($"Debug overlay toggled. Enabled={_isDebugOverlayEnabled}.");
     }
 
-    private void UpdateManualSave(FrameTime frameTime, FrameInput input)
+    private void UpdatePlayerControl(FrameInput input)
+    {
+        var moveAxis = 0f;
+        if (input.IsKeyDown(InputKey.A) || input.IsKeyDown(InputKey.Left))
+        {
+            moveAxis -= 1f;
+        }
+
+        if (input.IsKeyDown(InputKey.D) || input.IsKeyDown(InputKey.Right))
+        {
+            moveAxis += 1f;
+        }
+
+        var jumpRequested = input.KeyWentDown(InputKey.W) || input.KeyWentDown(InputKey.Up);
+        _worldRuntime.SetPlayerInput(_playerEntityId, moveAxis, jumpRequested);
+    }
+
+    private void UpdateCameraFromPlayer()
+    {
+        if (!_worldRuntime.TryGetEntity(_playerEntityId, out var player))
+        {
+            return;
+        }
+
+        var playerCenterPixels = new Int2(
+            (int)MathF.Round((player.Position.X + player.LocalBounds.X + (player.LocalBounds.Width / 2f)) * _renderSettings.TileSizePixels),
+            (int)MathF.Round((player.Position.Y + player.LocalBounds.Y + (player.LocalBounds.Height / 2f)) * _renderSettings.TileSizePixels));
+
+        _camera.PositionPixels = new Int2(
+            playerCenterPixels.X - (_camera.ViewportSizePixels.X / 2),
+            playerCenterPixels.Y - (_camera.ViewportSizePixels.Y / 2));
+
+        _worldRuntime.EnsureActiveAround(new WorldTileCoord(
+            (int)MathF.Floor(player.Position.X),
+            (int)MathF.Floor(player.Position.Y)));
+    }
+
+    private void UpdateManualSave(FrameInput input)
     {
         if (!input.KeyWentDown(InputKey.F5))
         {
@@ -322,55 +547,7 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
         EngineDiagnostics.Info($"Manual world save completed. SavedDirtyChunks={savedChunkCount}.");
     }
 
-    private void UpdateCamera(FrameTime frameTime, FrameInput input)
-    {
-        var horizontal = 0;
-        var vertical = 0;
-
-        if (input.IsKeyDown(InputKey.A) || input.IsKeyDown(InputKey.Left))
-        {
-            horizontal--;
-        }
-
-        if (input.IsKeyDown(InputKey.D) || input.IsKeyDown(InputKey.Right))
-        {
-            horizontal++;
-        }
-
-        if (input.IsKeyDown(InputKey.W) || input.IsKeyDown(InputKey.Up))
-        {
-            vertical--;
-        }
-
-        if (input.IsKeyDown(InputKey.S) || input.IsKeyDown(InputKey.Down))
-        {
-            vertical++;
-        }
-
-        if (horizontal == 0 && vertical == 0)
-        {
-            return;
-        }
-
-        var magnitude = Math.Sqrt((horizontal * horizontal) + (vertical * vertical));
-        if (magnitude <= 0)
-        {
-            return;
-        }
-
-        var speedMultiplier = input.IsKeyDown(InputKey.LeftShift) || input.IsKeyDown(InputKey.RightShift)
-            ? CameraSpeedBoostMultiplier
-            : 1d;
-        var frameDistance = CameraSpeedPixelsPerSecond * speedMultiplier * frameTime.ElapsedTime.TotalSeconds;
-        var deltaX = (int)Math.Round((horizontal / magnitude) * frameDistance);
-        var deltaY = (int)Math.Round((vertical / magnitude) * frameDistance);
-
-        _camera.PositionPixels = new Int2(
-            _camera.PositionPixels.X + deltaX,
-            _camera.PositionPixels.Y + deltaY);
-    }
-
-    private void UpdateTileEdits(FrameInput input)
+    private void UpdateWorldEdits(FrameInput input)
     {
         var hoveredTileCoord = _debugOverlayRenderer.TryGetHoveredTileCoord(_camera, input);
         if (hoveredTileCoord is not { } coord)
@@ -380,33 +557,103 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
 
         if (input.LeftButton.WentDown)
         {
-            var placeResult = _worldRuntime.PlaceTile(
-                coord,
-                _selectedTileId,
-                new TilePlacementContext
-                {
-                    ActorEntityId = 1,
-                    Source = PlacementSource.DebugTool
-                });
-
-            EngineDiagnostics.Info(
-                $"PlaceTile requested. Success={placeResult.Success}, Coord={placeResult.Coord}, " +
-                $"Previous={placeResult.PreviousTileId}, Current={placeResult.CurrentTileId}, Dirty={placeResult.DirtyFlagsApplied}.");
+            HandlePlace(coord);
         }
         else if (input.RightButton.WentDown)
         {
-            var breakResult = _worldRuntime.BreakTile(
-                coord,
-                new TileBreakContext
-                {
-                    ActorEntityId = 1,
-                    Source = BreakSource.DebugTool
-                });
-
-            EngineDiagnostics.Info(
-                $"BreakTile requested. Success={breakResult.Success}, Coord={breakResult.Coord}, " +
-                $"Previous={breakResult.PreviousTileId}, Current={breakResult.CurrentTileId}, Dirty={breakResult.DirtyFlagsApplied}.");
+            HandleRemove(coord);
         }
     }
 
+    private void HandlePlace(WorldTileCoord coord)
+    {
+        switch (_toolMode)
+        {
+            case ToolMode.Tile:
+                var placeResult = _worldRuntime.PlaceTile(
+                    coord,
+                    _tilePalette[_selectedPaletteIndex],
+                    new TilePlacementContext
+                    {
+                        ActorEntityId = _playerEntityId,
+                        Source = PlacementSource.DebugTool
+                    });
+                EngineDiagnostics.Info(
+                    $"PlaceTile requested. Success={placeResult.Success}, Coord={placeResult.Coord}, Previous={placeResult.PreviousTileId}, Current={placeResult.CurrentTileId}, Dirty={placeResult.DirtyFlagsApplied}.");
+                break;
+
+            case ToolMode.Wall:
+                var wallPlaced = _worldRuntime.SetBackgroundWall(coord, _wallPalette[_selectedPaletteIndex]);
+                EngineDiagnostics.Info($"SetBackgroundWall requested. Success={wallPlaced}, Coord={coord}, Wall={_wallPalette[_selectedPaletteIndex]}.");
+                break;
+
+            case ToolMode.Object:
+                var objectResult = _worldRuntime.PlaceObject(
+                    coord,
+                    _objectPalette[_selectedPaletteIndex],
+                    new ObjectPlacementContext
+                    {
+                        ActorEntityId = _playerEntityId,
+                        Source = PlacementSource.DebugTool
+                    });
+                EngineDiagnostics.Info(
+                    $"PlaceObject requested. Success={objectResult.Success}, Coord={objectResult.AnchorCoord}, ObjectDef={objectResult.ObjectDefId}, Instance={objectResult.ObjectInstanceId}, Dirty={objectResult.DirtyFlagsApplied}.");
+                break;
+        }
+    }
+
+    private void HandleRemove(WorldTileCoord coord)
+    {
+        switch (_toolMode)
+        {
+            case ToolMode.Tile:
+                var breakResult = _worldRuntime.BreakTile(
+                    coord,
+                    new TileBreakContext
+                    {
+                        ActorEntityId = _playerEntityId,
+                        Source = BreakSource.DebugTool,
+                        SpawnDrops = true
+                    });
+                EngineDiagnostics.Info(
+                    $"BreakTile requested. Success={breakResult.Success}, Coord={breakResult.Coord}, Previous={breakResult.PreviousTileId}, Current={breakResult.CurrentTileId}, Dirty={breakResult.DirtyFlagsApplied}.");
+                break;
+
+            case ToolMode.Wall:
+                var wallRemoved = _worldRuntime.RemoveBackgroundWall(coord);
+                EngineDiagnostics.Info($"RemoveBackgroundWall requested. Success={wallRemoved}, Coord={coord}.");
+                break;
+
+            case ToolMode.Object:
+                var removed = _worldRuntime.TryGetObjectAt(coord, out var instance) &&
+                              _worldRuntime.RemoveObject(instance.InstanceId);
+                EngineDiagnostics.Info($"RemoveObject requested. Success={removed}, Coord={coord}.");
+                break;
+        }
+    }
+
+    private string GetSelectionLabel()
+    {
+        return _toolMode switch
+        {
+            ToolMode.Tile => $"TILE {_tilePalette[_selectedPaletteIndex].ToString(CultureInfo.InvariantCulture)} {_contentRegistry.GetTileDef(_tilePalette[_selectedPaletteIndex]).Name.ToUpperInvariant()}",
+            ToolMode.Wall => $"WALL {_wallPalette[_selectedPaletteIndex].ToString(CultureInfo.InvariantCulture)} {_contentRegistry.GetWallDef(_wallPalette[_selectedPaletteIndex]).Name.ToUpperInvariant()}",
+            ToolMode.Object => $"OBJECT {_objectPalette[_selectedPaletteIndex].ToString(CultureInfo.InvariantCulture)} {_contentRegistry.GetObjectDef(_objectPalette[_selectedPaletteIndex]).Name.ToUpperInvariant()}",
+            _ => "UNKNOWN"
+        };
+    }
+
+    private ushort GetSelectedTileIdForOverlay()
+    {
+        return _toolMode == ToolMode.Tile
+            ? _tilePalette[_selectedPaletteIndex]
+            : (ushort)0;
+    }
+
+    private enum ToolMode
+    {
+        Tile = 0,
+        Wall = 1,
+        Object = 2
+    }
 }

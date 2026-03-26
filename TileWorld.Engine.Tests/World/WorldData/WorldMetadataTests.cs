@@ -14,7 +14,7 @@ public sealed class WorldMetadataTests
         Assert.Equal(string.Empty, metadata.Name);
         Assert.Equal(0, metadata.Seed);
         Assert.Equal(1, metadata.WorldFormatVersion);
-        Assert.Equal(1, metadata.ChunkFormatVersion);
+        Assert.Equal(2, metadata.ChunkFormatVersion);
         Assert.Equal(0L, metadata.WorldTime);
         Assert.Equal(WorldBoundsMode.LargeFinite, metadata.BoundsMode);
         Assert.Equal(Int2.Zero, metadata.SpawnTile);

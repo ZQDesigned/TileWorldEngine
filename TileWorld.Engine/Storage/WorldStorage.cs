@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
+using TileWorld.Engine.World.Objects;
 
 namespace TileWorld.Engine.Storage;
 
@@ -85,17 +87,43 @@ public sealed class WorldStorage
     }
 
     /// <summary>
+    /// Attempts to load persisted chunk data, including anchored objects, for the supplied coordinate.
+    /// </summary>
+    /// <param name="worldPath">The root path of the world on disk.</param>
+    /// <param name="coord">The chunk coordinate to load.</param>
+    /// <returns>The loaded payload when persisted data exists; otherwise <see langword="null"/>.</returns>
+    internal ChunkStoragePayload TryLoadChunkPayload(string worldPath, ChunkCoord coord)
+    {
+        var chunkFilePath = GetChunkFilePath(worldPath, coord);
+        return !File.Exists(chunkFilePath)
+            ? null
+            : _chunkSerializer.DeserializePayload(File.ReadAllBytes(chunkFilePath), coord);
+    }
+
+    /// <summary>
     /// Saves a chunk payload to the supplied world path.
     /// </summary>
     /// <param name="worldPath">The root path of the world on disk.</param>
     /// <param name="chunk">The chunk to serialize.</param>
     public void SaveChunk(string worldPath, Chunk chunk)
     {
+        SaveChunk(worldPath, chunk, []);
+    }
+
+    /// <summary>
+    /// Saves a chunk payload and its anchored objects to the supplied world path.
+    /// </summary>
+    /// <param name="worldPath">The root path of the world on disk.</param>
+    /// <param name="chunk">The chunk to serialize.</param>
+    /// <param name="anchoredObjects">The anchored object instances that should be stored with this chunk.</param>
+    internal void SaveChunk(string worldPath, Chunk chunk, IReadOnlyList<ObjectInstance> anchoredObjects)
+    {
         ArgumentNullException.ThrowIfNull(chunk);
+        ArgumentNullException.ThrowIfNull(anchoredObjects);
 
         var chunksDirectory = GetChunksDirectoryPath(worldPath);
         Directory.CreateDirectory(chunksDirectory);
-        File.WriteAllBytes(GetChunkFilePath(worldPath, chunk.Coord), _chunkSerializer.Serialize(chunk));
+        File.WriteAllBytes(GetChunkFilePath(worldPath, chunk.Coord), _chunkSerializer.Serialize(chunk, anchoredObjects));
     }
 
     /// <summary>

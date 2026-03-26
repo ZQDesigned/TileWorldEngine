@@ -1,10 +1,13 @@
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Content.Tiles;
+using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.Runtime.AutoTile;
 using TileWorld.Engine.Runtime.Chunks;
 using TileWorld.Engine.Runtime.Contexts;
 using TileWorld.Engine.Runtime.Events;
+using TileWorld.Engine.Runtime.Objects;
 using TileWorld.Engine.Runtime.Queries;
+using TileWorld.Engine.Runtime.Support;
 using TileWorld.Engine.Runtime.Tracking;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Cells;
@@ -26,7 +29,10 @@ internal sealed class TileEditService
     private readonly ContentRegistry _contentRegistry;
     private readonly ChunkManager _chunkManager;
     private readonly DirtyTracker _dirtyTracker;
+    private readonly EntityManager _entityManager;
     private readonly WorldEventBus _eventBus;
+    private readonly ObjectManager _objectManager;
+    private readonly SupportSystem _supportSystem;
     private readonly WorldQueryService _worldQueryService;
     private readonly WorldData _worldData;
 
@@ -39,6 +45,9 @@ internal sealed class TileEditService
     /// <param name="dirtyTracker">The dirty tracker used to propagate chunk dirty flags.</param>
     /// <param name="eventBus">The event bus used to publish tile-change notifications.</param>
     /// <param name="autoTileSystem">The autotile system used to refresh tile variants after edits.</param>
+    /// <param name="objectManager">The optional object manager used to validate object occupancy.</param>
+    /// <param name="supportSystem">The optional support system used to react to support loss.</param>
+    /// <param name="entityManager">The optional entity manager used to spawn drops.</param>
     /// <param name="chunkManager">The optional chunk manager used to load missing chunks before writes.</param>
     public TileEditService(
         WorldData worldData,
@@ -47,6 +56,9 @@ internal sealed class TileEditService
         DirtyTracker dirtyTracker,
         WorldEventBus eventBus,
         AutoTileSystem autoTileSystem,
+        ObjectManager objectManager = null,
+        SupportSystem supportSystem = null,
+        EntityManager entityManager = null,
         ChunkManager chunkManager = null)
     {
         _worldData = worldData;
@@ -55,6 +67,9 @@ internal sealed class TileEditService
         _dirtyTracker = dirtyTracker;
         _eventBus = eventBus;
         _autoTileSystem = autoTileSystem;
+        _objectManager = objectManager;
+        _supportSystem = supportSystem;
+        _entityManager = entityManager;
         _chunkManager = chunkManager;
     }
 
@@ -107,6 +122,33 @@ internal sealed class TileEditService
     }
 
     /// <summary>
+    /// Writes a non-empty background wall directly to the world.
+    /// </summary>
+    /// <param name="coord">The target world-tile coordinate.</param>
+    /// <param name="wallId">The non-empty wall identifier to write.</param>
+    /// <returns><see langword="true"/> when the write succeeds.</returns>
+    public bool SetBackgroundWall(WorldTileCoord coord, ushort wallId)
+    {
+        if (wallId == 0 || !_contentRegistry.HasWallDef(wallId))
+        {
+            return false;
+        }
+
+        return SetBackgroundWallCore(coord, wallId);
+    }
+
+    /// <summary>
+    /// Removes the background wall at the supplied coordinate.
+    /// </summary>
+    /// <param name="coord">The target world-tile coordinate.</param>
+    /// <returns><see langword="true"/> when a background wall existed and was removed.</returns>
+    public bool RemoveBackgroundWall(WorldTileCoord coord)
+    {
+        var currentCell = _worldQueryService.GetCell(coord);
+        return currentCell.BackgroundWallId != 0 && SetBackgroundWallCore(coord, 0);
+    }
+
+    /// <summary>
     /// Places a tile using placement semantics and validation rules.
     /// </summary>
     /// <param name="coord">The target world-tile coordinate.</param>
@@ -119,6 +161,8 @@ internal sealed class TileEditService
         {
             return TileEditResult.Failed(TileEditErrorCode.InvalidTileId, coord);
         }
+
+        EnsureChunkLoadedForRead(coord);
 
         if (!context.IgnoreValidation && !CanPlaceTile(coord, tileId, context))
         {
@@ -142,6 +186,8 @@ internal sealed class TileEditService
     /// <returns>The outcome of the break attempt.</returns>
     public TileEditResult BreakTile(WorldTileCoord coord, TileBreakContext context)
     {
+        EnsureChunkLoadedForRead(coord);
+
         if (!TryGetExistingTile(coord, out var previousTileId))
         {
             return TileEditResult.Failed(TileEditErrorCode.NoTilePresent, coord);
@@ -172,6 +218,8 @@ internal sealed class TileEditService
     /// <returns><see langword="true"/> when the placement would currently succeed.</returns>
     public bool CanPlaceTile(WorldTileCoord coord, ushort tileId, TilePlacementContext context)
     {
+        EnsureChunkLoadedForRead(coord);
+
         if (tileId == 0 || !_contentRegistry.HasTileDef(tileId))
         {
             return false;
@@ -201,6 +249,8 @@ internal sealed class TileEditService
     /// <returns><see langword="true"/> when the break would currently succeed.</returns>
     public bool CanBreakTile(WorldTileCoord coord, TileBreakContext context)
     {
+        EnsureChunkLoadedForRead(coord);
+
         if (!TryGetExistingTile(coord, out var previousTileId))
         {
             return false;
@@ -265,8 +315,21 @@ internal sealed class TileEditService
 
         _dirtyTracker.MarkNeighborDirtyIfBoundary(coord, neighborDirtyFlags);
         _autoTileSystem.RefreshAround(coord);
+        _supportSystem?.RefreshAfterTileChanged(coord);
 
         var result = TileEditResult.Succeeded(coord, previousTileId, newTileId, dirtyFlags);
+
+        if (_entityManager is not null &&
+            semanticBreakContext is not null &&
+            semanticBreakContext.SpawnDrops &&
+            previousTileId != 0 &&
+            TryGetTileDef(previousTileId, out var removedTileDef) &&
+            removedTileDef.BreakDropItemId != 0)
+        {
+            _entityManager.SpawnDrop(
+                removedTileDef.BreakDropItemId,
+                new TileWorld.Engine.Core.Math.Float2(coord.X + 0.5f, coord.Y + 0.5f));
+        }
 
         if (!suppressEvents)
         {
@@ -297,6 +360,26 @@ internal sealed class TileEditService
         return result;
     }
 
+    private bool SetBackgroundWallCore(WorldTileCoord coord, ushort wallId)
+    {
+        var chunk = ResolveChunkForWallWrite(coord, wallId);
+        if (chunk is null)
+        {
+            return false;
+        }
+
+        var localCoord = _worldQueryService.ToLocalCoord(coord);
+        var existingCell = chunk.GetCell(localCoord.X, localCoord.Y);
+        if (existingCell.BackgroundWallId == wallId)
+        {
+            return true;
+        }
+
+        chunk.SetCell(localCoord.X, localCoord.Y, existingCell with { BackgroundWallId = wallId });
+        _dirtyTracker.MarkDirty(chunk.Coord, ChunkDirtyFlags.RenderDirty | ChunkDirtyFlags.SaveDirty);
+        return true;
+    }
+
     private World.Chunks.Chunk ResolveChunkForWrite(WorldTileCoord coord, ushort newTileId)
     {
         var chunkCoord = _worldQueryService.ToChunkCoord(coord);
@@ -307,6 +390,25 @@ internal sealed class TileEditService
         }
 
         if (newTileId == 0)
+        {
+            return null;
+        }
+
+        return _chunkManager is not null
+            ? _chunkManager.GetOrLoadChunk(chunkCoord)
+            : _worldData.GetOrCreateChunk(chunkCoord);
+    }
+
+    private World.Chunks.Chunk ResolveChunkForWallWrite(WorldTileCoord coord, ushort newWallId)
+    {
+        var chunkCoord = _worldQueryService.ToChunkCoord(coord);
+
+        if (_worldData.TryGetChunk(chunkCoord, out var existingChunk))
+        {
+            return existingChunk;
+        }
+
+        if (newWallId == 0)
         {
             return null;
         }
@@ -339,13 +441,21 @@ internal sealed class TileEditService
         return _contentRegistry.TryGetTileDef(tileId, out tileDef);
     }
 
-    private static bool ValidateObjectOccupancy(WorldTileCoord coord)
+    private bool ValidateObjectOccupancy(WorldTileCoord coord)
     {
-        return true;
+        return _objectManager is null || !_objectManager.IsOccupied(coord);
     }
 
     private static bool ValidateSupportRequirements(WorldTileCoord coord, ushort tileId)
     {
         return true;
+    }
+
+    private void EnsureChunkLoadedForRead(WorldTileCoord coord)
+    {
+        if (_chunkManager is not null)
+        {
+            _chunkManager.GetOrLoadChunk(_worldQueryService.ToChunkCoord(coord));
+        }
     }
 }

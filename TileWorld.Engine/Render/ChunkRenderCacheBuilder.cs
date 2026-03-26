@@ -37,7 +37,8 @@ public sealed class ChunkRenderCacheBuilder
     /// <returns>A render cache containing all generated foreground draw commands.</returns>
     public ChunkRenderCache Build(Chunk chunk, int buildTick)
     {
-        var commands = new List<SpriteDrawCommand>();
+        var backgroundCommands = new List<SpriteDrawCommand>();
+        var foregroundCommands = new List<SpriteDrawCommand>();
         var chunkOrigin = WorldCoordinateConverter.ToChunkOrigin(chunk.Coord);
         var worldPixelBounds = new RectI(
             chunkOrigin.X * _settings.TileSizePixels,
@@ -50,32 +51,37 @@ public sealed class ChunkRenderCacheBuilder
             for (var localX = 0; localX < ChunkDimensions.Width; localX++)
             {
                 var cell = chunk.GetCell(localX, localY);
-                if (cell.ForegroundTileId == 0)
-                {
-                    continue;
-                }
-
-                if (!_contentRegistry.TryGetTileDef(cell.ForegroundTileId, out var tileDef))
-                {
-                    continue;
-                }
-
                 var destinationRectPixels = new RectI(
                     worldPixelBounds.X + (localX * _settings.TileSizePixels),
                     worldPixelBounds.Y + (localY * _settings.TileSizePixels),
                     _settings.TileSizePixels,
                     _settings.TileSizePixels);
 
-                commands.Add(new SpriteDrawCommand(
-                    tileDef.Visual.TextureKey,
-                    ResolveSourceRect(tileDef.Visual, cell.Variant),
-                    destinationRectPixels,
-                    tileDef.Visual.Tint,
-                    0f));
+                if (cell.BackgroundWallId != 0 &&
+                    _contentRegistry.TryGetWallDef(cell.BackgroundWallId, out var wallDef))
+                {
+                    backgroundCommands.Add(new SpriteDrawCommand(
+                        wallDef.Visual.TextureKey,
+                        wallDef.Visual.SourceRect,
+                        destinationRectPixels,
+                        wallDef.Visual.Tint,
+                        -0.1f));
+                }
+
+                if (cell.ForegroundTileId != 0 &&
+                    _contentRegistry.TryGetTileDef(cell.ForegroundTileId, out var tileDef))
+                {
+                    foregroundCommands.Add(new SpriteDrawCommand(
+                        tileDef.Visual.TextureKey,
+                        ResolveSourceRect(tileDef.Visual, cell.Variant),
+                        destinationRectPixels,
+                        tileDef.Visual.Tint,
+                        0f));
+                }
             }
         }
 
-        return new ChunkRenderCache(chunk.Coord, true, buildTick, worldPixelBounds, commands);
+        return new ChunkRenderCache(chunk.Coord, true, buildTick, worldPixelBounds, backgroundCommands, foregroundCommands);
     }
 
     private RectI ResolveSourceRect(TileVisualDef visual, ushort variant)

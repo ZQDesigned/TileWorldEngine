@@ -61,13 +61,15 @@ public sealed class DebugOverlayRenderer
     /// <param name="camera">The active camera.</param>
     /// <param name="input">The current frame input snapshot.</param>
     /// <param name="selectedTileId">The tile currently selected by the debug application.</param>
+    /// <param name="selectionLabel">An optional label that should override the default selection text.</param>
     /// <returns>A frame containing textual lines and generated overlay draw commands.</returns>
     public DebugOverlayFrame Build(
         WorldRuntime runtime,
         WorldRenderer worldRenderer,
         Camera2D camera,
         FrameInput input,
-        ushort selectedTileId)
+        ushort selectedTileId,
+        string selectionLabel = null)
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(worldRenderer);
@@ -81,6 +83,7 @@ public sealed class DebugOverlayRenderer
         var hoveredCell = TileCell.Empty;
         var hoveredDirtyFlags = ChunkDirtyFlags.None;
         var hoveredChunkLoaded = false;
+        var hoveredObjectLine = string.Empty;
 
         AddVisibleChunkHighlights(commands, runtime, worldRenderer, camera);
 
@@ -91,6 +94,11 @@ public sealed class DebugOverlayRenderer
             hoveredCell = runtime.QueryService.GetCell(tileCoord);
             hoveredChunkLoaded = runtime.WorldData.TryGetChunk(hoveredChunkCoord.Value, out var hoveredChunk);
             hoveredDirtyFlags = hoveredChunkLoaded ? hoveredChunk.DirtyFlags : ChunkDirtyFlags.None;
+            if (runtime.QueryService.TryGetObjectAt(tileCoord, out var hoveredObject) &&
+                runtime.ContentRegistry.TryGetObjectDef(hoveredObject.ObjectDefId, out var hoveredObjectDef))
+            {
+                hoveredObjectLine = $"OBJECT: {hoveredObject.InstanceId.ToString(CultureInfo.InvariantCulture)} {hoveredObjectDef.Name.ToUpperInvariant()}";
+            }
 
             AddHoveredTileHighlight(commands, camera, tileCoord);
         }
@@ -98,13 +106,15 @@ public sealed class DebugOverlayRenderer
         var panelLines = BuildPanelLines(
             runtime,
             selectedTileId,
+            selectionLabel,
             camera,
             hoveredTileCoord,
             hoveredChunkCoord,
             hoveredLocalCoord,
             hoveredCell,
             hoveredDirtyFlags,
-            hoveredChunkLoaded);
+            hoveredChunkLoaded,
+            hoveredObjectLine);
 
         AddPanel(commands, panelLines);
 
@@ -120,17 +130,19 @@ public sealed class DebugOverlayRenderer
     /// <param name="input">The current frame input snapshot.</param>
     /// <param name="renderContext">The render context that receives overlay draw commands.</param>
     /// <param name="selectedTileId">The tile currently selected by the debug application.</param>
+    /// <param name="selectionLabel">An optional label that should override the default selection text.</param>
     public void Draw(
         WorldRuntime runtime,
         WorldRenderer worldRenderer,
         Camera2D camera,
         FrameInput input,
         IRenderContext renderContext,
-        ushort selectedTileId)
+        ushort selectedTileId,
+        string selectionLabel = null)
     {
         ArgumentNullException.ThrowIfNull(renderContext);
 
-        var frame = Build(runtime, worldRenderer, camera, input, selectedTileId);
+        var frame = Build(runtime, worldRenderer, camera, input, selectedTileId, selectionLabel);
         foreach (var command in frame.DrawCommands)
         {
             renderContext.DrawSprite(command);
@@ -192,21 +204,25 @@ public sealed class DebugOverlayRenderer
     private IReadOnlyList<string> BuildPanelLines(
         WorldRuntime runtime,
         ushort selectedTileId,
+        string selectionLabel,
         Camera2D camera,
         WorldTileCoord? hoveredTileCoord,
         ChunkCoord? hoveredChunkCoord,
         Int2? hoveredLocalCoord,
         TileCell hoveredCell,
         ChunkDirtyFlags hoveredDirtyFlags,
-        bool hoveredChunkLoaded)
+        bool hoveredChunkLoaded,
+        string hoveredObjectLine)
     {
-        var selectedName = runtime.ContentRegistry.TryGetTileDef(selectedTileId, out var selectedTileDef)
-            ? selectedTileDef.Name.ToUpperInvariant()
-            : "UNKNOWN";
+        var effectiveSelectionLabel = !string.IsNullOrWhiteSpace(selectionLabel)
+            ? selectionLabel
+            : runtime.ContentRegistry.TryGetTileDef(selectedTileId, out var selectedTileDef)
+                ? $"{selectedTileId.ToString(CultureInfo.InvariantCulture)} {selectedTileDef.Name.ToUpperInvariant()}"
+                : "UNKNOWN";
 
         var lines = new List<string>
         {
-            $"SELECTED: {selectedTileId.ToString(CultureInfo.InvariantCulture)} {selectedName}",
+            $"SELECTED: {effectiveSelectionLabel}",
             $"CAMERA: {camera.PositionPixels.X.ToString(CultureInfo.InvariantCulture)},{camera.PositionPixels.Y.ToString(CultureInfo.InvariantCulture)}",
             $"PERSISTENCE: {(runtime.IsPersistenceEnabled ? "ON" : "OFF")}"
         };
@@ -225,6 +241,11 @@ public sealed class DebugOverlayRenderer
         lines.Add($"FG TILE: {hoveredCell.ForegroundTileId.ToString(CultureInfo.InvariantCulture)}");
         lines.Add(
             $"VARIANT: {hoveredCell.Variant.ToString(CultureInfo.InvariantCulture)} FLAGS: {hoveredCell.Flags.ToString(CultureInfo.InvariantCulture)}");
+        lines.Add($"BG WALL: {hoveredCell.BackgroundWallId.ToString(CultureInfo.InvariantCulture)}");
+        if (!string.IsNullOrWhiteSpace(hoveredObjectLine))
+        {
+            lines.Add(hoveredObjectLine);
+        }
         lines.Add($"DIRTY: {(hoveredChunkLoaded ? FormatDirtyFlags(hoveredDirtyFlags) : "UNLOADED")}");
 
         return lines;

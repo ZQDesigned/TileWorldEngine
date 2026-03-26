@@ -42,4 +42,9 @@ public sealed class WorldRuntimeOptions
     /// Gets the minimum spacing enforced between consecutive automatic saves.
     /// </summary>
     public TimeSpan MinimumAutoSaveSpacing { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Gets the chunk radius kept active around the current attention center.
+    /// </summary>
+    public int ActiveRadiusInChunks { get; init; } = 2;
 }

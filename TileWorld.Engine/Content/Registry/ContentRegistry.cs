@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using TileWorld.Engine.Content.Items;
+using TileWorld.Engine.Content.Objects;
 using TileWorld.Engine.Content.Tiles;
+using TileWorld.Engine.Content.Walls;
 
 namespace TileWorld.Engine.Content.Registry;
 
@@ -9,7 +12,10 @@ namespace TileWorld.Engine.Content.Registry;
 /// </summary>
 public sealed class ContentRegistry
 {
+    private readonly Dictionary<int, ItemDef> _itemDefs = new();
+    private readonly Dictionary<int, ObjectDef> _objectDefs = new();
     private readonly Dictionary<ushort, TileDef> _tileDefs = new();
+    private readonly Dictionary<ushort, WallDef> _wallDefs = new();
 
     /// <summary>
     /// Creates a registry and seeds it with the built-in air tile definition.
@@ -25,7 +31,16 @@ public sealed class ContentRegistry
             BlocksLight = false,
             CanBeMined = false,
             Hardness = 0,
+            BreakDropItemId = 0,
             AutoTileGroupId = 0
+        });
+        RegisterWall(new WallDef
+        {
+            Id = 0,
+            Name = "NoWall",
+            AutoTileGroupId = 0,
+            CountsAsRoomWall = false,
+            ObscuresBackground = false
         });
     }
 
@@ -88,5 +103,188 @@ public sealed class ContentRegistry
     public IEnumerable<TileDef> EnumerateTileDefs()
     {
         return _tileDefs.Values;
+    }
+
+    /// <summary>
+    /// Registers a wall definition by its numeric identifier.
+    /// </summary>
+    /// <param name="wallDef">The wall definition to register.</param>
+    public void RegisterWall(WallDef wallDef)
+    {
+        ArgumentNullException.ThrowIfNull(wallDef);
+
+        if (_wallDefs.ContainsKey(wallDef.Id))
+        {
+            throw new InvalidOperationException($"A wall definition with id {wallDef.Id} is already registered.");
+        }
+
+        _wallDefs.Add(wallDef.Id, wallDef);
+    }
+
+    /// <summary>
+    /// Resolves a wall definition or throws when the identifier is unknown.
+    /// </summary>
+    /// <param name="id">The numeric wall identifier.</param>
+    /// <returns>The registered wall definition.</returns>
+    public WallDef GetWallDef(ushort id)
+    {
+        if (!TryGetWallDef(id, out var wallDef))
+        {
+            throw new KeyNotFoundException($"No wall definition is registered for id {id}.");
+        }
+
+        return wallDef;
+    }
+
+    /// <summary>
+    /// Attempts to resolve a wall definition for the supplied identifier.
+    /// </summary>
+    /// <param name="id">The numeric wall identifier.</param>
+    /// <param name="wallDef">The resolved wall definition when the lookup succeeds.</param>
+    /// <returns><see langword="true"/> when the identifier is registered.</returns>
+    public bool TryGetWallDef(ushort id, out WallDef wallDef)
+    {
+        return _wallDefs.TryGetValue(id, out wallDef!);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the supplied wall identifier is registered.
+    /// </summary>
+    /// <param name="id">The numeric wall identifier.</param>
+    /// <returns><see langword="true"/> when the identifier is registered.</returns>
+    public bool HasWallDef(ushort id)
+    {
+        return _wallDefs.ContainsKey(id);
+    }
+
+    /// <summary>
+    /// Enumerates all registered wall definitions.
+    /// </summary>
+    /// <returns>An enumeration of all registered wall definitions.</returns>
+    public IEnumerable<WallDef> EnumerateWallDefs()
+    {
+        return _wallDefs.Values;
+    }
+
+    /// <summary>
+    /// Registers an object definition by its numeric identifier.
+    /// </summary>
+    /// <param name="objectDef">The object definition to register.</param>
+    public void RegisterObject(ObjectDef objectDef)
+    {
+        ArgumentNullException.ThrowIfNull(objectDef);
+
+        if (_objectDefs.ContainsKey(objectDef.Id))
+        {
+            throw new InvalidOperationException($"An object definition with id {objectDef.Id} is already registered.");
+        }
+
+        _objectDefs.Add(objectDef.Id, objectDef);
+    }
+
+    /// <summary>
+    /// Resolves an object definition or throws when the identifier is unknown.
+    /// </summary>
+    /// <param name="id">The numeric object identifier.</param>
+    /// <returns>The registered object definition.</returns>
+    public ObjectDef GetObjectDef(int id)
+    {
+        if (!TryGetObjectDef(id, out var objectDef))
+        {
+            throw new KeyNotFoundException($"No object definition is registered for id {id}.");
+        }
+
+        return objectDef;
+    }
+
+    /// <summary>
+    /// Attempts to resolve an object definition for the supplied identifier.
+    /// </summary>
+    /// <param name="id">The numeric object identifier.</param>
+    /// <param name="objectDef">The resolved object definition when the lookup succeeds.</param>
+    /// <returns><see langword="true"/> when the identifier is registered.</returns>
+    public bool TryGetObjectDef(int id, out ObjectDef objectDef)
+    {
+        return _objectDefs.TryGetValue(id, out objectDef!);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the supplied object identifier is registered.
+    /// </summary>
+    /// <param name="id">The numeric object identifier.</param>
+    /// <returns><see langword="true"/> when the identifier is registered.</returns>
+    public bool HasObjectDef(int id)
+    {
+        return _objectDefs.ContainsKey(id);
+    }
+
+    /// <summary>
+    /// Enumerates all registered object definitions.
+    /// </summary>
+    /// <returns>An enumeration of all registered object definitions.</returns>
+    public IEnumerable<ObjectDef> EnumerateObjectDefs()
+    {
+        return _objectDefs.Values;
+    }
+
+    /// <summary>
+    /// Registers an item definition by its numeric identifier.
+    /// </summary>
+    /// <param name="itemDef">The item definition to register.</param>
+    public void RegisterItem(ItemDef itemDef)
+    {
+        ArgumentNullException.ThrowIfNull(itemDef);
+
+        if (_itemDefs.ContainsKey(itemDef.Id))
+        {
+            throw new InvalidOperationException($"An item definition with id {itemDef.Id} is already registered.");
+        }
+
+        _itemDefs.Add(itemDef.Id, itemDef);
+    }
+
+    /// <summary>
+    /// Resolves an item definition or throws when the identifier is unknown.
+    /// </summary>
+    /// <param name="id">The numeric item identifier.</param>
+    /// <returns>The registered item definition.</returns>
+    public ItemDef GetItemDef(int id)
+    {
+        if (!TryGetItemDef(id, out var itemDef))
+        {
+            throw new KeyNotFoundException($"No item definition is registered for id {id}.");
+        }
+
+        return itemDef;
+    }
+
+    /// <summary>
+    /// Attempts to resolve an item definition for the supplied identifier.
+    /// </summary>
+    /// <param name="id">The numeric item identifier.</param>
+    /// <param name="itemDef">The resolved item definition when the lookup succeeds.</param>
+    /// <returns><see langword="true"/> when the identifier is registered.</returns>
+    public bool TryGetItemDef(int id, out ItemDef itemDef)
+    {
+        return _itemDefs.TryGetValue(id, out itemDef!);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the supplied item identifier is registered.
+    /// </summary>
+    /// <param name="id">The numeric item identifier.</param>
+    /// <returns><see langword="true"/> when the identifier is registered.</returns>
+    public bool HasItemDef(int id)
+    {
+        return _itemDefs.ContainsKey(id);
+    }
+
+    /// <summary>
+    /// Enumerates all registered item definitions.
+    /// </summary>
+    /// <returns>An enumeration of all registered item definitions.</returns>
+    public IEnumerable<ItemDef> EnumerateItemDefs()
+    {
+        return _itemDefs.Values;
     }
 }

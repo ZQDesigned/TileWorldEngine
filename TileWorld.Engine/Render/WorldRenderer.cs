@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TileWorld.Engine.Content.Objects;
 using TileWorld.Engine.Core.Diagnostics;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Runtime;
+using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
+using TileWorld.Engine.World.Objects;
 
 namespace TileWorld.Engine.Render;
 
@@ -86,15 +89,32 @@ public sealed class WorldRenderer
 
         foreach (var coord in GetVisibleChunkCoords())
         {
-            if (!_chunkRenderCaches.TryGetValue(coord, out var cache) || !cache.IsBuilt)
+            if (!runtime.WorldData.TryGetChunk(coord, out _) ||
+                !_chunkRenderCaches.TryGetValue(coord, out var cache) ||
+                !cache.IsBuilt)
             {
                 continue;
+            }
+
+            foreach (var command in cache.BackgroundCommands)
+            {
+                renderContext.DrawSprite(ToScreenSpace(command));
             }
 
             foreach (var command in cache.ForegroundCommands)
             {
                 renderContext.DrawSprite(ToScreenSpace(command));
             }
+        }
+
+        foreach (var command in BuildVisibleObjectCommands(runtime))
+        {
+            renderContext.DrawSprite(command);
+        }
+
+        foreach (var command in BuildVisibleEntityCommands(runtime))
+        {
+            renderContext.DrawSprite(command);
         }
     }
 
@@ -140,6 +160,101 @@ public sealed class WorldRenderer
                 command.DestinationRectPixels.Width,
                 command.DestinationRectPixels.Height)
         };
+    }
+
+    private IEnumerable<SpriteDrawCommand> BuildVisibleObjectCommands(WorldRuntime runtime)
+    {
+        var renderedObjectIds = new HashSet<int>();
+
+        foreach (var chunkCoord in GetVisibleChunkCoords())
+        {
+            foreach (var instance in runtime.ObjectManager.QueryObjectsInChunk(chunkCoord))
+            {
+                if (!renderedObjectIds.Add(instance.InstanceId) ||
+                    !runtime.ContentRegistry.TryGetObjectDef(instance.ObjectDefId, out var objectDef))
+                {
+                    continue;
+                }
+
+                yield return ToScreenSpace(BuildObjectCommand(runtime, instance, objectDef));
+            }
+        }
+    }
+
+    private SpriteDrawCommand BuildObjectCommand(WorldRuntime runtime, ObjectInstance instance, ObjectDef objectDef)
+    {
+        var origin = runtime.ObjectManager.GetFootprintOrigin(instance.AnchorCoord, objectDef);
+        return new SpriteDrawCommand(
+            objectDef.Visual.TextureKey,
+            objectDef.Visual.SourceRect,
+            new RectI(
+                origin.X * _settings.TileSizePixels,
+                origin.Y * _settings.TileSizePixels,
+                objectDef.SizeInTiles.X * _settings.TileSizePixels,
+                objectDef.SizeInTiles.Y * _settings.TileSizePixels),
+            objectDef.Visual.Tint,
+            0.3f);
+    }
+
+    private IEnumerable<SpriteDrawCommand> BuildVisibleEntityCommands(WorldRuntime runtime)
+    {
+        var worldViewBounds = Camera.GetWorldViewBounds();
+
+        foreach (var entity in runtime.EnumerateEntities())
+        {
+            var worldBoundsPixels = new RectI(
+                (int)MathF.Round((entity.Position.X + entity.LocalBounds.X) * _settings.TileSizePixels),
+                (int)MathF.Round((entity.Position.Y + entity.LocalBounds.Y) * _settings.TileSizePixels),
+                Math.Max(1, (int)MathF.Round(entity.LocalBounds.Width * _settings.TileSizePixels)),
+                Math.Max(1, (int)MathF.Round(entity.LocalBounds.Height * _settings.TileSizePixels)));
+
+            if (!Intersects(worldBoundsPixels, worldViewBounds))
+            {
+                continue;
+            }
+
+            var tint = ResolveEntityTint(runtime, entity);
+            var textureKey = ResolveEntityTextureKey(runtime, entity);
+
+            yield return ToScreenSpace(new SpriteDrawCommand(
+                textureKey,
+                new RectI(0, 0, 1, 1),
+                worldBoundsPixels,
+                tint,
+                0.45f));
+        }
+    }
+
+    private static string ResolveEntityTextureKey(WorldRuntime runtime, Entity entity)
+    {
+        return entity.Type == EntityType.Drop &&
+               runtime.ContentRegistry.TryGetItemDef(entity.ItemDefId, out var itemDef)
+            ? itemDef.Visual.TextureKey
+            : "debug/white";
+    }
+
+    private static ColorRgba32 ResolveEntityTint(WorldRuntime runtime, Entity entity)
+    {
+        if (entity.Type == EntityType.Drop &&
+            runtime.ContentRegistry.TryGetItemDef(entity.ItemDefId, out var itemDef))
+        {
+            return itemDef.Visual.Tint;
+        }
+
+        return entity.Type switch
+        {
+            EntityType.Player => new ColorRgba32(70, 170, 255),
+            EntityType.Drop => new ColorRgba32(255, 240, 140),
+            _ => ColorRgba32.White
+        };
+    }
+
+    private static bool Intersects(RectI left, RectI right)
+    {
+        return left.Left < right.Right &&
+               left.Right > right.Left &&
+               left.Top < right.Bottom &&
+               left.Bottom > right.Top;
     }
 
     private static int GetInclusiveRight(RectI bounds)

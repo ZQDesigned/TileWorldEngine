@@ -1,0 +1,10 @@
+bin/
+obj/
+/packages/
+riderModule.iml
+/_ReSharper.Caches/
+.idea/
+.vs/
+*.DotSettings.user
+**/.vscode/
+tilemap_chunk_engine_design_draft_v6.md

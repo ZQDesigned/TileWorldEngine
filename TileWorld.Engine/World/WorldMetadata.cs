@@ -58,6 +58,22 @@ public sealed class WorldMetadata
     public Int2 SpawnTile { get; init; } = Int2.Zero;
 
     /// <summary>
+    /// Gets the optional inclusive minimum tile Y coordinate allowed by the world.
+    /// </summary>
+    /// <remarks>
+    /// When <see langword="null"/>, the world has no enforced upper vertical boundary.
+    /// </remarks>
+    public int? MinTileY { get; init; }
+
+    /// <summary>
+    /// Gets the optional inclusive maximum tile Y coordinate allowed by the world.
+    /// </summary>
+    /// <remarks>
+    /// When <see langword="null"/>, the world has no enforced lower vertical boundary.
+    /// </remarks>
+    public int? MaxTileY { get; init; }
+
+    /// <summary>
     /// Gets the chunk width that persisted content was authored against.
     /// </summary>
     public int ChunkWidth { get; init; } = World.Chunks.ChunkDimensions.Width;

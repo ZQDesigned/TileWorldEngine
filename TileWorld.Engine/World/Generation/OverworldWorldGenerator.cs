@@ -26,6 +26,10 @@ internal sealed class OverworldWorldGenerator : IWorldGenerator
         for (var localY = 0; localY < ChunkDimensions.Height; localY++)
         {
             var worldY = chunkOrigin.Y + localY;
+            if (!WorldVerticalBoundsUtility.IsTileYWithinBounds(context.Metadata, worldY))
+            {
+                continue;
+            }
 
             for (var localX = 0; localX < ChunkDimensions.Width; localX++)
             {

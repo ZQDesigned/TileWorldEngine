@@ -105,6 +105,13 @@ public sealed class WorldCatalog
             throw new ArgumentException("World name cannot be empty.", nameof(options));
         }
 
+        if (options.MinTileY is { } minTileY &&
+            options.MaxTileY is { } maxTileY &&
+            minTileY > maxTileY)
+        {
+            throw new ArgumentException("World vertical bounds are invalid because MinTileY is greater than MaxTileY.", nameof(options));
+        }
+
         Directory.CreateDirectory(WorldsRootPath);
 
         var directoryName = CreateUniqueDirectoryName(name);
@@ -116,7 +123,9 @@ public sealed class WorldCatalog
             Seed = options.Seed ?? Random.Shared.Next(int.MinValue, int.MaxValue),
             GeneratorId = string.IsNullOrWhiteSpace(options.GeneratorId) ? "overworld_v1" : options.GeneratorId,
             GeneratorVersion = 1,
-            SpawnTile = options.SpawnTile
+            SpawnTile = options.SpawnTile,
+            MinTileY = options.MinTileY,
+            MaxTileY = options.MaxTileY
         };
 
         _worldStorage.SaveMetadata(worldPath, metadata);

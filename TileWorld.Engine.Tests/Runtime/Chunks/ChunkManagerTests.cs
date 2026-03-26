@@ -1,6 +1,7 @@
 using TileWorld.Engine.Content.Biomes;
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Content.Tiles;
+using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Content.Walls;
 using TileWorld.Engine.Runtime.Chunks;
 using TileWorld.Engine.Runtime.Events;
@@ -129,6 +130,50 @@ public sealed class ChunkManagerTests
         chunkManager.EnsureActiveAround(new WorldTileCoord(0, 0));
 
         Assert.NotEmpty(queuedEvents);
+    }
+
+    [Fact]
+    public void EnsureActiveAround_SkipsChunksOutsideVerticalBounds()
+    {
+        using var directory = new TileWorld.Engine.Tests.Storage.TestDirectoryScope();
+        var metadata = new WorldMetadata
+        {
+            Seed = 321,
+            SpawnTile = new TileWorld.Engine.Core.Math.Int2(4, 18),
+            MinTileY = 0,
+            MaxTileY = 31
+        };
+        var chunkManager = new ChunkManager(
+            new WorldData(metadata),
+            new WorldStorage(),
+            directory.Path,
+            CreateRegistry(),
+            new FlatDebugWorldGenerator(),
+            activeRadiusInChunks: 1);
+
+        chunkManager.EnsureActiveAround(new WorldTileCoord(0, 16));
+        var activeChunks = chunkManager.GetActiveChunks().ToArray();
+
+        Assert.All(activeChunks, coord => Assert.Equal(0, coord.Y));
+    }
+
+    [Fact]
+    public void EnsureActiveForTileArea_LoadsVisibleChunkWindowInsteadOfSingleCenterOnly()
+    {
+        using var directory = new TileWorld.Engine.Tests.Storage.TestDirectoryScope();
+        var chunkManager = new ChunkManager(
+            new WorldData(new WorldMetadata { Seed = 321, SpawnTile = new TileWorld.Engine.Core.Math.Int2(4, 18) }),
+            new WorldStorage(),
+            directory.Path,
+            CreateRegistry(),
+            new FlatDebugWorldGenerator(),
+            activeRadiusInChunks: 1);
+
+        chunkManager.EnsureActiveForTileArea(new RectI(0, 0, 64, 32));
+        var activeChunks = chunkManager.GetActiveChunks().OrderBy(static coord => coord.X).ThenBy(static coord => coord.Y).ToArray();
+
+        Assert.Contains(new ChunkCoord(0, 0), activeChunks);
+        Assert.Contains(new ChunkCoord(1, 0), activeChunks);
     }
 
     private static ContentRegistry CreateRegistry()

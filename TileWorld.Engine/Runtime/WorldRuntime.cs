@@ -243,6 +243,16 @@ public sealed class WorldRuntime
     }
 
     /// <summary>
+    /// Returns whether the supplied world-tile coordinate falls inside the world's optional vertical bounds.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <returns><see langword="true"/> when the coordinate is within the configured world bounds.</returns>
+    public bool IsWithinWorldBounds(WorldTileCoord coord)
+    {
+        return QueryService.IsWithinWorldBounds(coord);
+    }
+
+    /// <summary>
     /// Writes a background wall directly to the world.
     /// </summary>
     /// <param name="coord">The target world-tile coordinate.</param>
@@ -362,6 +372,16 @@ public sealed class WorldRuntime
     public void EnsureActiveAround(WorldTileCoord center)
     {
         ChunkManager?.EnsureActiveAround(center);
+    }
+
+    /// <summary>
+    /// Ensures that chunks covering a world-tile area remain active, with optional extra chunk padding.
+    /// </summary>
+    /// <param name="tileBounds">The world-tile area that should remain synchronously active.</param>
+    /// <param name="activePaddingInChunks">The number of extra chunk rings that should remain active around the area.</param>
+    public void EnsureActiveForTileArea(RectI tileBounds, int activePaddingInChunks = 0)
+    {
+        ChunkManager?.EnsureActiveForTileArea(tileBounds, activePaddingInChunks);
     }
 
     /// <summary>
@@ -591,6 +611,8 @@ public sealed class WorldRuntime
             WorldTime = metadata.WorldTime,
             BoundsMode = metadata.BoundsMode,
             SpawnTile = metadata.SpawnTile,
+            MinTileY = metadata.MinTileY,
+            MaxTileY = metadata.MaxTileY,
             ChunkWidth = World.Chunks.ChunkDimensions.Width,
             ChunkHeight = World.Chunks.ChunkDimensions.Height
         };

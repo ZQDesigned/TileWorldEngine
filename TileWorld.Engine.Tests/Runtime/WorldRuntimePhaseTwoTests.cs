@@ -177,6 +177,50 @@ public sealed class WorldRuntimePhaseTwoTests
         Assert.NotEmpty(collectedEvents);
     }
 
+    [Fact]
+    public void ObjectPlacement_FailsWhenFootprintLeavesVerticalBounds()
+    {
+        var runtime = new WorldRuntime(
+            new WorldData(new WorldMetadata
+            {
+                MinTileY = 0,
+                MaxTileY = 3
+            }),
+            CreateRegistry());
+        runtime.Initialize();
+        SeedSupportFloor(runtime, 0, 1, 2);
+
+        var objectResult = runtime.PlaceObject(
+            new WorldTileCoord(0, 3),
+            100,
+            new ObjectPlacementContext { Source = PlacementSource.DebugTool });
+
+        Assert.False(objectResult.Success);
+        Assert.Equal(TileWorld.Engine.Runtime.Objects.ObjectPlacementErrorCode.OutOfBounds, objectResult.ErrorCode);
+    }
+
+    [Fact]
+    public void PlayerPhysics_ClampsToConfiguredVerticalBounds()
+    {
+        var runtime = new WorldRuntime(
+            new WorldData(new WorldMetadata
+            {
+                MinTileY = 0,
+                MaxTileY = 5
+            }),
+            CreateRegistry());
+        runtime.Initialize();
+        var playerId = runtime.SpawnPlayer(new Float2(0.5f, 0.25f));
+
+        for (var frame = 0; frame < 90; frame++)
+        {
+            runtime.Update(new FrameTime(TimeSpan.FromSeconds(frame / 60d), TimeSpan.FromSeconds(1d / 60d), false));
+        }
+
+        Assert.True(runtime.TryGetEntity(playerId, out var player));
+        Assert.True(player.Position.Y + player.LocalBounds.Bottom <= 6f);
+    }
+
     private static void SeedSupportFloor(WorldRuntime runtime, int minX, int maxX, int y)
     {
         for (var x = minX; x <= maxX; x++)

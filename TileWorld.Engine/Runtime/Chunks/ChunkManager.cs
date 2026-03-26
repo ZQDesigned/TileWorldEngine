@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using TileWorld.Engine.Content.Registry;
+using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Runtime.Events;
 using TileWorld.Engine.Runtime.Objects;
 using TileWorld.Engine.Storage;
@@ -136,20 +137,46 @@ internal sealed class ChunkManager
     }
 
     /// <summary>
+    /// Updates the active chunk set around a world-tile area.
+    /// </summary>
+    /// <param name="tileBounds">The world-tile area that should remain active.</param>
+    /// <param name="activePaddingInChunks">The number of additional chunk rings that should stay synchronously active.</param>
+    public void EnsureActiveForTileArea(RectI tileBounds, int activePaddingInChunks = 0)
+    {
+        UpdateActiveSetForTileArea(tileBounds, activePaddingInChunks);
+    }
+
+    /// <summary>
     /// Updates the active chunk set around a world-tile center.
     /// </summary>
     /// <param name="center">The center world-tile coordinate.</param>
     public void UpdateActiveSet(WorldTileCoord center)
     {
+        UpdateActiveSetForTileArea(new RectI(center.X, center.Y, 1, 1), _activeRadiusInChunks);
+    }
+
+    private void UpdateActiveSetForTileArea(RectI tileBounds, int activePaddingInChunks)
+    {
         FlushPrefetchedChunks();
-        var centerChunk = WorldCoordinateConverter.ToChunkCoord(center);
+        var padding = Math.Max(0, activePaddingInChunks);
+        var minChunk = WorldCoordinateConverter.ToChunkCoord(new WorldTileCoord(tileBounds.Left, tileBounds.Top));
+        var maxChunk = WorldCoordinateConverter.ToChunkCoord(new WorldTileCoord(GetInclusiveRight(tileBounds), GetInclusiveBottom(tileBounds)));
+        var activeMinChunkX = minChunk.X - padding;
+        var activeMaxChunkX = maxChunk.X + padding;
+        var activeMinChunkY = minChunk.Y - padding;
+        var activeMaxChunkY = maxChunk.Y + padding;
         var desiredActiveChunks = new HashSet<ChunkCoord>();
 
-        for (var offsetY = -_activeRadiusInChunks; offsetY <= _activeRadiusInChunks; offsetY++)
+        for (var chunkY = activeMinChunkY; chunkY <= activeMaxChunkY; chunkY++)
         {
-            for (var offsetX = -_activeRadiusInChunks; offsetX <= _activeRadiusInChunks; offsetX++)
+            for (var chunkX = activeMinChunkX; chunkX <= activeMaxChunkX; chunkX++)
             {
-                var coord = centerChunk.Offset(offsetX, offsetY);
+                var coord = new ChunkCoord(chunkX, chunkY);
+                if (!WorldVerticalBoundsUtility.DoesChunkIntersectBounds(_worldData.Metadata, coord))
+                {
+                    continue;
+                }
+
                 desiredActiveChunks.Add(coord);
                 var chunk = GetOrLoadChunk(coord);
                 if (chunk.State != ChunkState.Active)
@@ -177,8 +204,21 @@ internal sealed class ChunkManager
             _activeChunks.Add(coord);
         }
 
-        QueueOuterRing(centerChunk, desiredActiveChunks);
-        UnloadFarChunks(center, _prefetchRadiusInChunks);
+        var prefetchMinChunkX = activeMinChunkX - 1;
+        var prefetchMaxChunkX = activeMaxChunkX + 1;
+        var prefetchMinChunkY = activeMinChunkY - 1;
+        var prefetchMaxChunkY = activeMaxChunkY + 1;
+        QueueOuterRing(
+            activeMinChunkX,
+            activeMaxChunkX,
+            activeMinChunkY,
+            activeMaxChunkY,
+            prefetchMinChunkX,
+            prefetchMaxChunkX,
+            prefetchMinChunkY,
+            prefetchMaxChunkY,
+            desiredActiveChunks);
+        UnloadOutsideChunkRange(prefetchMinChunkX, prefetchMaxChunkX, prefetchMinChunkY, prefetchMaxChunkY);
     }
 
     /// <summary>
@@ -306,19 +346,72 @@ internal sealed class ChunkManager
         }
     }
 
-    private void QueueOuterRing(ChunkCoord centerChunk, IReadOnlySet<ChunkCoord> desiredActiveChunks)
+    private void UnloadOutsideChunkRange(int minChunkX, int maxChunkX, int minChunkY, int maxChunkY)
+    {
+        var unloadCandidates = _worldData
+            .EnumerateLoadedChunks()
+            .Select(chunk => chunk.Coord)
+            .Where(coord =>
+                coord.X < minChunkX ||
+                coord.X > maxChunkX ||
+                coord.Y < minChunkY ||
+                coord.Y > maxChunkY)
+            .ToArray();
+
+        foreach (var coord in unloadCandidates)
+        {
+            if (!_worldData.TryGetChunk(coord, out var chunk))
+            {
+                continue;
+            }
+
+            _eventBus.Publish(new ChunkUnloadingEvent(coord));
+
+            if ((chunk.DirtyFlags & ChunkDirtyFlags.SaveDirty) != ChunkDirtyFlags.None)
+            {
+                SaveChunk(chunk);
+                chunk.DirtyFlags &= ~ChunkDirtyFlags.SaveDirty;
+            }
+
+            _objectManager?.RemoveObjectsAnchoredInChunk(coord);
+            chunk.State = ChunkState.Unloaded;
+            _worldData.RemoveChunk(coord);
+            _activeChunks.Remove(coord);
+        }
+    }
+
+    private void QueueOuterRing(
+        int activeMinChunkX,
+        int activeMaxChunkX,
+        int activeMinChunkY,
+        int activeMaxChunkY,
+        int prefetchMinChunkX,
+        int prefetchMaxChunkX,
+        int prefetchMinChunkY,
+        int prefetchMaxChunkY,
+        IReadOnlySet<ChunkCoord> desiredActiveChunks)
     {
         if (_isShutdown)
         {
             return;
         }
 
-        for (var offsetY = -_prefetchRadiusInChunks; offsetY <= _prefetchRadiusInChunks; offsetY++)
+        for (var chunkY = prefetchMinChunkY; chunkY <= prefetchMaxChunkY; chunkY++)
         {
-            for (var offsetX = -_prefetchRadiusInChunks; offsetX <= _prefetchRadiusInChunks; offsetX++)
+            for (var chunkX = prefetchMinChunkX; chunkX <= prefetchMaxChunkX; chunkX++)
             {
-                var coord = centerChunk.Offset(offsetX, offsetY);
-                if (desiredActiveChunks.Contains(coord) || _worldData.HasChunk(coord))
+                if (chunkX >= activeMinChunkX &&
+                    chunkX <= activeMaxChunkX &&
+                    chunkY >= activeMinChunkY &&
+                    chunkY <= activeMaxChunkY)
+                {
+                    continue;
+                }
+
+                var coord = new ChunkCoord(chunkX, chunkY);
+                if (!WorldVerticalBoundsUtility.DoesChunkIntersectBounds(_worldData.Metadata, coord) ||
+                    desiredActiveChunks.Contains(coord) ||
+                    _worldData.HasChunk(coord))
                 {
                     continue;
                 }
@@ -380,6 +473,11 @@ internal sealed class ChunkManager
 
     private ChunkStreamingCoordinator.PrefetchedChunkResult ResolveChunkOnBackgroundThread(ChunkCoord coord)
     {
+        if (!WorldVerticalBoundsUtility.DoesChunkIntersectBounds(_worldData.Metadata, coord))
+        {
+            return CreateEmptyResult(coord);
+        }
+
         var payload = _worldStorage.TryLoadChunkPayload(_worldPath, coord, _worldData.Metadata);
         if (payload is not null)
         {
@@ -397,6 +495,20 @@ internal sealed class ChunkManager
                 ChunkLoadSource.Generated);
         }
 
+        return CreateEmptyResult(coord);
+    }
+
+    private WorldGenerationContext CreateGenerationContext()
+    {
+        return new WorldGenerationContext
+        {
+            Metadata = _worldData.Metadata,
+            ContentRegistry = _contentRegistry
+        };
+    }
+
+    private static ChunkStreamingCoordinator.PrefetchedChunkResult CreateEmptyResult(ChunkCoord coord)
+    {
         var emptyChunk = new Chunk(coord)
         {
             State = ChunkState.Loading
@@ -408,12 +520,13 @@ internal sealed class ChunkManager
             ChunkLoadSource.EmptyCreated);
     }
 
-    private WorldGenerationContext CreateGenerationContext()
+    private static int GetInclusiveRight(RectI bounds)
     {
-        return new WorldGenerationContext
-        {
-            Metadata = _worldData.Metadata,
-            ContentRegistry = _contentRegistry
-        };
+        return bounds.Width == 0 ? bounds.Left : bounds.Right - 1;
+    }
+
+    private static int GetInclusiveBottom(RectI bounds)
+    {
+        return bounds.Height == 0 ? bounds.Top : bounds.Bottom - 1;
     }
 }

@@ -43,6 +43,11 @@ internal sealed class FlatDebugWorldGenerator : IWorldGenerator
         for (var localY = 0; localY < ChunkDimensions.Height; localY++)
         {
             var worldY = chunkOrigin.Y + localY;
+            if (!WorldVerticalBoundsUtility.IsTileYWithinBounds(context.Metadata, worldY))
+            {
+                continue;
+            }
+
             if (worldY < surfaceY)
             {
                 continue;

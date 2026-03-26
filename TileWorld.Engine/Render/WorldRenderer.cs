@@ -56,9 +56,25 @@ public sealed class WorldRenderer
         var rebuiltChunkCoords = new List<ChunkCoord>();
         var dirtyChunkCoords = runtime.DirtyTracker
             .EnumerateDirtyChunks(ChunkDirtyFlags.RenderDirty)
+            .ToHashSet();
+
+        if (dirtyChunkCoords.Count == 0)
+        {
+            return;
+        }
+
+        var visibleChunkCoords = GetVisibleChunkCoords().ToArray();
+        var visibleChunkSet = visibleChunkCoords.ToHashSet();
+        var prioritizedChunkCoords = visibleChunkCoords
+            .Where(dirtyChunkCoords.Contains)
+            .Concat(dirtyChunkCoords
+                .Except(visibleChunkSet)
+                .OrderBy(coord => coord.Y)
+                .ThenBy(coord => coord.X))
+            .Take(_settings.MaxDirtyChunkCacheRebuildsPerFrame)
             .ToArray();
 
-        foreach (var coord in dirtyChunkCoords)
+        foreach (var coord in prioritizedChunkCoords)
         {
             if (!runtime.WorldData.TryGetChunk(coord, out var chunk))
             {

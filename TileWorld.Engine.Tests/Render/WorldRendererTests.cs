@@ -113,6 +113,32 @@ public sealed class WorldRendererTests
         Assert.Equal(new RectI(0, 8, 16, 16), command.DestinationRectPixels);
     }
 
+    [Fact]
+    public void RebuildDirtyCaches_UsesFrameBudgetAndPrioritizesVisibleChunks()
+    {
+        var runtime = CreateRuntime();
+        var camera = new Camera2D(Int2.Zero, new Int2(512, 512));
+        var settings = new WorldRenderSettings(tileSizePixels: 16, visibleChunkPadding: 1, maxDirtyChunkCacheRebuildsPerFrame: 1);
+        var renderer = new WorldRenderer(camera, new ChunkRenderCacheBuilder(runtime.ContentRegistry, settings), settings);
+
+        runtime.Initialize();
+        runtime.PlaceTile(
+            new WorldTileCoord(0, 0),
+            1,
+            new TilePlacementContext { Source = PlacementSource.DebugTool });
+        runtime.PlaceTile(
+            new WorldTileCoord(320, 0),
+            1,
+            new TilePlacementContext { Source = PlacementSource.DebugTool });
+
+        renderer.RebuildDirtyCaches(runtime);
+
+        Assert.True(renderer.TryGetChunkRenderCache(new ChunkCoord(0, 0), out _));
+        Assert.False(renderer.TryGetChunkRenderCache(new ChunkCoord(10, 0), out _));
+        Assert.False(runtime.DirtyTracker.HasDirty(new ChunkCoord(0, 0), ChunkDirtyFlags.RenderDirty));
+        Assert.True(runtime.DirtyTracker.HasDirty(new ChunkCoord(10, 0), ChunkDirtyFlags.RenderDirty));
+    }
+
     private static WorldRuntime CreateRuntime()
     {
         var registry = new ContentRegistry();

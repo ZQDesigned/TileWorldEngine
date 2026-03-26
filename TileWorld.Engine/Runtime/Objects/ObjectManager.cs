@@ -138,6 +138,11 @@ internal sealed class ObjectManager
 
         foreach (var footprintCoord in EnumerateFootprint(anchorCoord, objectDef))
         {
+            if (!_worldQueryService.IsWithinWorldBounds(footprintCoord))
+            {
+                return ObjectPlacementErrorCode.OutOfBounds;
+            }
+
             if (IsOccupied(footprintCoord))
             {
                 return ObjectPlacementErrorCode.Occupied;

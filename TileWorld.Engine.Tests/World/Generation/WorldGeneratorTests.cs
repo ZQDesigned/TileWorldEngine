@@ -1,3 +1,4 @@
+using System.Linq;
 using TileWorld.Engine.Content.Biomes;
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Content.Tiles;
@@ -47,6 +48,37 @@ public sealed class WorldGeneratorTests
 
         Assert.Equal((ushort)0, spawnChunk.GetCell(spawnLocal.X, spawnLocal.Y).ForegroundTileId);
         Assert.NotEqual((ushort)0, spawnChunk.GetCell(spawnGroundLocal.X, spawnGroundLocal.Y).ForegroundTileId);
+    }
+
+    [Fact]
+    public void Generators_RespectOptionalVerticalBounds()
+    {
+        var generator = new FlatDebugWorldGenerator();
+        var context = new WorldGenerationContext
+        {
+            Metadata = new WorldMetadata
+            {
+                WorldId = "bounded-world",
+                Name = "Bounded World",
+                Seed = 1,
+                SpawnTile = new Int2(4, 4),
+                MinTileY = 0,
+                MaxTileY = 15
+            },
+            ContentRegistry = CreateRegistry()
+        };
+
+        var upperChunk = generator.GenerateChunk(context, new ChunkCoord(0, -1)).Chunk;
+        var lowerChunk = generator.GenerateChunk(context, new ChunkCoord(0, 0)).Chunk;
+
+        Assert.All(Enumerable.Range(0, ChunkDimensions.CellCount), index =>
+        {
+            var localX = index % ChunkDimensions.Width;
+            var localY = index / ChunkDimensions.Width;
+            Assert.Equal(TileCell.Empty, upperChunk.GetCell(localX, localY));
+        });
+        Assert.NotEqual(TileCell.Empty, lowerChunk.GetCell(0, 6));
+        Assert.Equal(TileCell.Empty, lowerChunk.GetCell(0, 16));
     }
 
     private static WorldGenerationContext CreateGenerationContext(int seed)

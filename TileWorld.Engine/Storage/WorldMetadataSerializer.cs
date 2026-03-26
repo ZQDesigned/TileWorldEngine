@@ -43,6 +43,8 @@ public sealed class WorldMetadataSerializer
                 X = metadata.SpawnTile.X,
                 Y = metadata.SpawnTile.Y
             },
+            MinTileY = metadata.MinTileY,
+            MaxTileY = metadata.MaxTileY,
             ChunkWidth = metadata.ChunkWidth,
             ChunkHeight = metadata.ChunkHeight
         };
@@ -67,7 +69,7 @@ public sealed class WorldMetadataSerializer
 
             ValidateChunkDimensions(dto.ChunkWidth, dto.ChunkHeight);
 
-            return new WorldMetadata
+            var metadata = new WorldMetadata
             {
                 WorldId = dto.WorldId ?? string.Empty,
                 Name = dto.Name ?? string.Empty,
@@ -79,9 +81,14 @@ public sealed class WorldMetadataSerializer
                 WorldTime = dto.WorldTime,
                 BoundsMode = dto.BoundsMode,
                 SpawnTile = new Int2(dto.SpawnTile?.X ?? 0, dto.SpawnTile?.Y ?? 0),
+                MinTileY = dto.MinTileY,
+                MaxTileY = dto.MaxTileY,
                 ChunkWidth = dto.ChunkWidth,
                 ChunkHeight = dto.ChunkHeight
             };
+
+            WorldVerticalBoundsUtility.Validate(metadata);
+            return metadata;
         }
         catch (JsonException exception)
         {
@@ -119,6 +126,10 @@ public sealed class WorldMetadataSerializer
         public WorldBoundsMode BoundsMode { get; set; } = WorldBoundsMode.LargeFinite;
 
         public Int2Dto SpawnTile { get; set; } = new();
+
+        public int? MinTileY { get; set; }
+
+        public int? MaxTileY { get; set; }
 
         public int ChunkWidth { get; set; }
 

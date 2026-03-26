@@ -81,6 +81,11 @@ internal sealed class TileEditService
     /// <returns>The outcome of the write operation.</returns>
     public TileEditResult SetForegroundTile(WorldTileCoord coord, ushort tileId)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return TileEditResult.Failed(TileEditErrorCode.OutOfBounds, coord);
+        }
+
         if (tileId == 0)
         {
             return TileEditResult.Failed(TileEditErrorCode.InvalidTileId, coord);
@@ -107,6 +112,11 @@ internal sealed class TileEditService
     /// <returns>The outcome of the removal operation.</returns>
     public TileEditResult RemoveForegroundTile(WorldTileCoord coord)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return TileEditResult.Failed(TileEditErrorCode.OutOfBounds, coord);
+        }
+
         if (!TryGetExistingTile(coord, out var previousTileId))
         {
             return TileEditResult.Failed(TileEditErrorCode.NoTilePresent, coord);
@@ -129,6 +139,11 @@ internal sealed class TileEditService
     /// <returns><see langword="true"/> when the write succeeds.</returns>
     public bool SetBackgroundWall(WorldTileCoord coord, ushort wallId)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return false;
+        }
+
         if (wallId == 0 || !_contentRegistry.HasWallDef(wallId))
         {
             return false;
@@ -144,6 +159,11 @@ internal sealed class TileEditService
     /// <returns><see langword="true"/> when a background wall existed and was removed.</returns>
     public bool RemoveBackgroundWall(WorldTileCoord coord)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return false;
+        }
+
         var currentCell = _worldQueryService.GetCell(coord);
         return currentCell.BackgroundWallId != 0 && SetBackgroundWallCore(coord, 0);
     }
@@ -157,6 +177,11 @@ internal sealed class TileEditService
     /// <returns>The outcome of the placement attempt.</returns>
     public TileEditResult PlaceTile(WorldTileCoord coord, ushort tileId, TilePlacementContext context)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return TileEditResult.Failed(TileEditErrorCode.OutOfBounds, coord);
+        }
+
         if (tileId == 0 || !_contentRegistry.TryGetTileDef(tileId, out _))
         {
             return TileEditResult.Failed(TileEditErrorCode.InvalidTileId, coord);
@@ -186,6 +211,11 @@ internal sealed class TileEditService
     /// <returns>The outcome of the break attempt.</returns>
     public TileEditResult BreakTile(WorldTileCoord coord, TileBreakContext context)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return TileEditResult.Failed(TileEditErrorCode.OutOfBounds, coord);
+        }
+
         EnsureChunkLoadedForRead(coord);
 
         if (!TryGetExistingTile(coord, out var previousTileId))
@@ -218,6 +248,11 @@ internal sealed class TileEditService
     /// <returns><see langword="true"/> when the placement would currently succeed.</returns>
     public bool CanPlaceTile(WorldTileCoord coord, ushort tileId, TilePlacementContext context)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return false;
+        }
+
         EnsureChunkLoadedForRead(coord);
 
         if (tileId == 0 || !_contentRegistry.HasTileDef(tileId))
@@ -249,6 +284,11 @@ internal sealed class TileEditService
     /// <returns><see langword="true"/> when the break would currently succeed.</returns>
     public bool CanBreakTile(WorldTileCoord coord, TileBreakContext context)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return false;
+        }
+
         EnsureChunkLoadedForRead(coord);
 
         if (!TryGetExistingTile(coord, out var previousTileId))
@@ -382,6 +422,11 @@ internal sealed class TileEditService
 
     private World.Chunks.Chunk ResolveChunkForWrite(WorldTileCoord coord, ushort newTileId)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return null;
+        }
+
         var chunkCoord = _worldQueryService.ToChunkCoord(coord);
 
         if (_worldData.TryGetChunk(chunkCoord, out var existingChunk))
@@ -401,6 +446,11 @@ internal sealed class TileEditService
 
     private World.Chunks.Chunk ResolveChunkForWallWrite(WorldTileCoord coord, ushort newWallId)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return null;
+        }
+
         var chunkCoord = _worldQueryService.ToChunkCoord(coord);
 
         if (_worldData.TryGetChunk(chunkCoord, out var existingChunk))
@@ -453,9 +503,14 @@ internal sealed class TileEditService
 
     private void EnsureChunkLoadedForRead(WorldTileCoord coord)
     {
-        if (_chunkManager is not null)
+        if (_chunkManager is not null && IsWithinWorldBounds(coord))
         {
             _chunkManager.GetOrLoadChunk(_worldQueryService.ToChunkCoord(coord));
         }
+    }
+
+    private bool IsWithinWorldBounds(WorldTileCoord coord)
+    {
+        return _worldQueryService.IsWithinWorldBounds(coord);
     }
 }

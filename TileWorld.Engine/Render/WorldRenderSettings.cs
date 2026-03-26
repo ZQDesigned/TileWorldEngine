@@ -9,19 +9,20 @@ namespace TileWorld.Engine.Render;
 public sealed class WorldRenderSettings
 {
     /// <summary>
-    /// Creates render settings using the default tile size and visible chunk padding.
+    /// Creates render settings using the default tile size, visible chunk padding, and cache rebuild budget.
     /// </summary>
     public WorldRenderSettings()
-        : this(tileSizePixels: 16, visibleChunkPadding: 1)
+        : this(tileSizePixels: 16, visibleChunkPadding: 1, maxDirtyChunkCacheRebuildsPerFrame: 6)
     {
     }
 
     /// <summary>
-    /// Creates render settings with explicit tile size and visible chunk padding values.
+    /// Creates render settings with explicit tile size, visible chunk padding, and cache rebuild budget values.
     /// </summary>
     /// <param name="tileSizePixels">The size of one tile in screen pixels.</param>
     /// <param name="visibleChunkPadding">The number of extra chunks to include around the camera view.</param>
-    public WorldRenderSettings(int tileSizePixels, int visibleChunkPadding)
+    /// <param name="maxDirtyChunkCacheRebuildsPerFrame">The maximum number of dirty chunk render caches rebuilt in a single frame.</param>
+    public WorldRenderSettings(int tileSizePixels, int visibleChunkPadding, int maxDirtyChunkCacheRebuildsPerFrame = 6)
     {
         if (tileSizePixels <= 0)
         {
@@ -33,8 +34,17 @@ public sealed class WorldRenderSettings
             throw new ArgumentOutOfRangeException(nameof(visibleChunkPadding), visibleChunkPadding, "Visible chunk padding cannot be negative.");
         }
 
+        if (maxDirtyChunkCacheRebuildsPerFrame <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxDirtyChunkCacheRebuildsPerFrame),
+                maxDirtyChunkCacheRebuildsPerFrame,
+                "The cache rebuild budget must be positive.");
+        }
+
         TileSizePixels = tileSizePixels;
         VisibleChunkPadding = visibleChunkPadding;
+        MaxDirtyChunkCacheRebuildsPerFrame = maxDirtyChunkCacheRebuildsPerFrame;
     }
 
     /// <summary>
@@ -46,6 +56,11 @@ public sealed class WorldRenderSettings
     /// Gets the number of extra chunks to include around the visible camera range.
     /// </summary>
     public int VisibleChunkPadding { get; }
+
+    /// <summary>
+    /// Gets the maximum number of dirty chunk render caches rebuilt during one frame.
+    /// </summary>
+    public int MaxDirtyChunkCacheRebuildsPerFrame { get; }
 
     /// <summary>
     /// Gets the width of one chunk in pixels.

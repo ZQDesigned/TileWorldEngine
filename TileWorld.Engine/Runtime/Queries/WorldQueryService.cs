@@ -60,6 +60,8 @@ internal sealed class WorldQueryService
     {
     }
 
+    internal WorldMetadata Metadata => _worldData.Metadata;
+
     /// <summary>
     /// Attaches the object manager after runtime construction wiring has completed.
     /// </summary>
@@ -205,6 +207,16 @@ internal sealed class WorldQueryService
     }
 
     /// <summary>
+    /// Returns whether the supplied world-tile coordinate falls inside the world's optional vertical bounds.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <returns><see langword="true"/> when the coordinate is within the world's optional vertical bounds.</returns>
+    public bool IsWithinWorldBounds(WorldTileCoord coord)
+    {
+        return WorldVerticalBoundsUtility.IsTileWithinBounds(_worldData.Metadata, coord);
+    }
+
+    /// <summary>
     /// Enumerates the four orthogonal neighbor coordinates around a tile.
     /// </summary>
     /// <param name="coord">The center tile coordinate.</param>
@@ -324,6 +336,13 @@ internal sealed class WorldQueryService
         out Chunk chunk,
         out Int2 localCoord)
     {
+        if (!IsWithinWorldBounds(coord))
+        {
+            localCoord = default;
+            chunk = null!;
+            return false;
+        }
+
         var chunkCoord = ToChunkCoord(coord);
         localCoord = ToLocalCoord(coord);
 

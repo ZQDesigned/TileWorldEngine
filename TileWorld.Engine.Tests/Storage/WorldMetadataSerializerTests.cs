@@ -25,6 +25,8 @@ public sealed class WorldMetadataSerializerTests
         Assert.Equal(metadata.WorldTime, restored.WorldTime);
         Assert.Equal(metadata.BoundsMode, restored.BoundsMode);
         Assert.Equal(metadata.SpawnTile, restored.SpawnTile);
+        Assert.Equal(metadata.MinTileY, restored.MinTileY);
+        Assert.Equal(metadata.MaxTileY, restored.MaxTileY);
         Assert.Equal(metadata.ChunkWidth, restored.ChunkWidth);
         Assert.Equal(metadata.ChunkHeight, restored.ChunkHeight);
     }
@@ -45,6 +47,8 @@ public sealed class WorldMetadataSerializerTests
             WorldTime = 9001,
             BoundsMode = WorldBoundsMode.SemiInfinite,
             SpawnTile = new Int2(-10, 24),
+            MinTileY = -128,
+            MaxTileY = 384,
             ChunkWidth = 32,
             ChunkHeight = 32
         };
@@ -61,6 +65,8 @@ public sealed class WorldMetadataSerializerTests
         Assert.Equal(metadata.WorldTime, restored.WorldTime);
         Assert.Equal(metadata.BoundsMode, restored.BoundsMode);
         Assert.Equal(metadata.SpawnTile, restored.SpawnTile);
+        Assert.Equal(metadata.MinTileY, restored.MinTileY);
+        Assert.Equal(metadata.MaxTileY, restored.MaxTileY);
     }
 
     [Fact]
@@ -83,5 +89,31 @@ public sealed class WorldMetadataSerializerTests
             """;
 
         Assert.Throws<InvalidDataException>(() => serializer.Deserialize(json));
+    }
+
+    [Fact]
+    public void Deserialize_WithInvalidVerticalBoundsThrows()
+    {
+        var serializer = new WorldMetadataSerializer();
+        const string json = """
+            {
+              "worldId": "world-1",
+              "name": "Broken Bounds",
+              "seed": 1,
+              "worldFormatVersion": 2,
+              "chunkFormatVersion": 2,
+              "generatorId": "overworld_v1",
+              "generatorVersion": 1,
+              "worldTime": 0,
+              "boundsMode": 0,
+              "spawnTile": { "x": 0, "y": 0 },
+              "minTileY": 32,
+              "maxTileY": 16,
+              "chunkWidth": 32,
+              "chunkHeight": 32
+            }
+            """;
+
+        Assert.Throws<ArgumentException>(() => serializer.Deserialize(json));
     }
 }

@@ -1,10 +1,12 @@
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Content.Tiles;
+using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Runtime;
 using TileWorld.Engine.Runtime.Contexts;
 using TileWorld.Engine.Runtime.Operations;
 using TileWorld.Engine.World;
+using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
 
 namespace TileWorld.Engine.Tests.Runtime;
@@ -47,7 +49,41 @@ public sealed class WorldRuntimeTests
         runtime.Shutdown();
     }
 
-    private static WorldRuntime CreateRuntime()
+    [Fact]
+    public void OutOfBoundsWorlds_RejectTilePlacement()
+    {
+        var runtime = CreateRuntime(new WorldMetadata
+        {
+            MinTileY = 0,
+            MaxTileY = 31
+        });
+
+        runtime.Initialize();
+        var outOfBoundsCoord = new WorldTileCoord(0, 40);
+        var placeResult = runtime.PlaceTile(
+            outOfBoundsCoord,
+            1,
+            new TilePlacementContext { Source = PlacementSource.DebugTool });
+
+        Assert.False(placeResult.Success);
+        Assert.Equal(TileWorld.Engine.Runtime.Edits.TileEditErrorCode.OutOfBounds, placeResult.ErrorCode);
+        Assert.False(runtime.IsWithinWorldBounds(outOfBoundsCoord));
+    }
+
+    [Fact]
+    public void EnsureActiveForTileArea_LoadsChunksCoveringTheRequestedBounds()
+    {
+        using var directory = new TileWorld.Engine.Tests.Storage.TestDirectoryScope();
+        var runtime = CreatePersistedRuntime(directory.Path);
+
+        runtime.Initialize();
+        runtime.EnsureActiveForTileArea(new RectI(0, 0, 64, 32));
+
+        Assert.Contains(new ChunkCoord(0, 0), runtime.GetActiveChunks());
+        Assert.Contains(new ChunkCoord(1, 0), runtime.GetActiveChunks());
+    }
+
+    private static WorldRuntime CreateRuntime(WorldMetadata? metadata = null)
     {
         var registry = new ContentRegistry();
         registry.RegisterTile(new TileDef
@@ -62,6 +98,38 @@ public sealed class WorldRuntimeTests
             AutoTileGroupId = 1
         });
 
-        return new WorldRuntime(new WorldData(new WorldMetadata()), registry);
+        return new WorldRuntime(new WorldData(metadata ?? new WorldMetadata()), registry);
+    }
+
+    private static WorldRuntime CreatePersistedRuntime(string worldPath)
+    {
+        var registry = new ContentRegistry();
+        registry.RegisterTile(new TileDef
+        {
+            Id = 1,
+            Name = "Stone",
+            Category = "Terrain",
+            IsSolid = true,
+            BlocksLight = true,
+            CanBeMined = true,
+            Hardness = 1,
+            AutoTileGroupId = 1
+        });
+
+        return new WorldRuntime(
+            new WorldData(new WorldMetadata
+            {
+                WorldId = "runtime-active-window",
+                Name = "Runtime Active Window",
+                Seed = 1234
+            }),
+            registry,
+            new WorldRuntimeOptions
+            {
+                WorldPath = worldPath,
+                WorldStorage = new TileWorld.Engine.Storage.WorldStorage(),
+                SaveOnShutdown = false,
+                EnableAutoSave = false
+            });
     }
 }

@@ -43,5 +43,10 @@ public enum ObjectPlacementErrorCode
     /// <summary>
     /// An unexpected internal error prevented the request from completing.
     /// </summary>
-    InternalError = 7
+    InternalError = 7,
+
+    /// <summary>
+    /// The requested footprint extends outside the world's optional vertical bounds.
+    /// </summary>
+    OutOfBounds = 8
 }

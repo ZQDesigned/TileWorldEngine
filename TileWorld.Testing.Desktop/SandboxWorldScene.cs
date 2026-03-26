@@ -596,9 +596,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             playerCenterPixels.X - (_camera.ViewportSizePixels.X / 2),
             playerCenterPixels.Y - (_camera.ViewportSizePixels.Y / 2));
 
-        _worldRuntime.EnsureActiveAround(new WorldTileCoord(
-            (int)MathF.Floor(player.Position.X),
-            (int)MathF.Floor(player.Position.Y)));
+        _worldRuntime.EnsureActiveForTileArea(CreateCameraTileBounds(), _renderSettings.VisibleChunkPadding);
     }
 
     private void UpdateManualSave(FrameInput input)
@@ -789,6 +787,44 @@ internal sealed class SandboxWorldScene : IEngineScene
         {
             renderContext.DrawSprite(command);
         }
+    }
+
+    private RectI CreateCameraTileBounds()
+    {
+        var worldViewBoundsPixels = _camera.GetWorldViewBounds();
+        var minTileX = FloorDivide(worldViewBoundsPixels.Left, _renderSettings.TileSizePixels);
+        var minTileY = FloorDivide(worldViewBoundsPixels.Top, _renderSettings.TileSizePixels);
+        var maxTileX = FloorDivide(GetInclusiveRight(worldViewBoundsPixels), _renderSettings.TileSizePixels);
+        var maxTileY = FloorDivide(GetInclusiveBottom(worldViewBoundsPixels), _renderSettings.TileSizePixels);
+
+        return new RectI(
+            minTileX,
+            minTileY,
+            (maxTileX - minTileX) + 1,
+            (maxTileY - minTileY) + 1);
+    }
+
+    private static int GetInclusiveRight(RectI bounds)
+    {
+        return bounds.Width == 0 ? bounds.Left : bounds.Right - 1;
+    }
+
+    private static int GetInclusiveBottom(RectI bounds)
+    {
+        return bounds.Height == 0 ? bounds.Top : bounds.Bottom - 1;
+    }
+
+    private static int FloorDivide(int value, int divisor)
+    {
+        var quotient = value / divisor;
+        var remainder = value % divisor;
+
+        if (remainder < 0)
+        {
+            quotient--;
+        }
+
+        return quotient;
     }
 
     private enum ToolMode

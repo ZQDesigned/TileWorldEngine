@@ -26,4 +26,14 @@ public sealed class WorldCreationOptions
     /// Gets the generator identifier that should be used for the new world.
     /// </summary>
     public string GeneratorId { get; init; } = "overworld_v1";
+
+    /// <summary>
+    /// Gets the optional inclusive minimum tile Y coordinate allowed by the created world.
+    /// </summary>
+    public int? MinTileY { get; init; }
+
+    /// <summary>
+    /// Gets the optional inclusive maximum tile Y coordinate allowed by the created world.
+    /// </summary>
+    public int? MaxTileY { get; init; }
 }

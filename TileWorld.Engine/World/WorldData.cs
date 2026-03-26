@@ -19,6 +19,7 @@ public sealed class WorldData
     public WorldData(WorldMetadata metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);
+        WorldVerticalBoundsUtility.Validate(metadata);
 
         Metadata = metadata;
     }
@@ -109,6 +110,7 @@ public sealed class WorldData
     public void UpdateMetadata(WorldMetadata metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);
+        WorldVerticalBoundsUtility.Validate(metadata);
         Metadata = metadata;
     }
 }

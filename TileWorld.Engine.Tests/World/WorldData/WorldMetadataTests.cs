@@ -20,6 +20,8 @@ public sealed class WorldMetadataTests
         Assert.Equal(0L, metadata.WorldTime);
         Assert.Equal(WorldBoundsMode.LargeFinite, metadata.BoundsMode);
         Assert.Equal(Int2.Zero, metadata.SpawnTile);
+        Assert.Null(metadata.MinTileY);
+        Assert.Null(metadata.MaxTileY);
         Assert.Equal(32, metadata.ChunkWidth);
         Assert.Equal(32, metadata.ChunkHeight);
     }
@@ -39,6 +41,8 @@ public sealed class WorldMetadataTests
             WorldTime = 99,
             BoundsMode = WorldBoundsMode.SemiInfinite,
             SpawnTile = new Int2(10, 12),
+            MinTileY = -64,
+            MaxTileY = 256,
             ChunkWidth = 32,
             ChunkHeight = 32
         };
@@ -53,6 +57,8 @@ public sealed class WorldMetadataTests
         Assert.Equal(99L, metadata.WorldTime);
         Assert.Equal(WorldBoundsMode.SemiInfinite, metadata.BoundsMode);
         Assert.Equal(new Int2(10, 12), metadata.SpawnTile);
+        Assert.Equal(-64, metadata.MinTileY);
+        Assert.Equal(256, metadata.MaxTileY);
         Assert.Equal(32, metadata.ChunkWidth);
         Assert.Equal(32, metadata.ChunkHeight);
     }

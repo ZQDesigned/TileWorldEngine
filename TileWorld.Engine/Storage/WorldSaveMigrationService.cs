@@ -63,6 +63,8 @@ internal sealed class WorldSaveMigrationService
             WorldTime = metadata.WorldTime,
             BoundsMode = metadata.BoundsMode,
             SpawnTile = metadata.SpawnTile,
+            MinTileY = metadata.MinTileY,
+            MaxTileY = metadata.MaxTileY,
             ChunkWidth = metadata.ChunkWidth,
             ChunkHeight = metadata.ChunkHeight
         };

@@ -97,6 +97,24 @@ internal sealed class TileCollisionService
     {
         var nextPosition = entity.Position with { Y = entity.Position.Y + deltaY };
         var nextBounds = entity.LocalBounds.Translate(nextPosition);
+        if (deltaY < 0f &&
+            _worldQueryService.Metadata.MinTileY is { } minTileY &&
+            nextBounds.Top < minTileY)
+        {
+            entity.Position = entity.Position with { Y = minTileY - entity.LocalBounds.Top };
+            entity.Velocity = entity.Velocity with { Y = 0f };
+            return;
+        }
+
+        if (deltaY > 0f &&
+            _worldQueryService.Metadata.MaxTileY is { } maxTileY &&
+            nextBounds.Bottom > maxTileY + 1f)
+        {
+            entity.Position = entity.Position with { Y = (maxTileY + 1f) - entity.LocalBounds.Bottom };
+            entity.Velocity = entity.Velocity with { Y = 0f };
+            entity.StateFlags |= EntityStateFlags.Grounded;
+            return;
+        }
 
         if (deltaY > 0f)
         {

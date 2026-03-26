@@ -75,6 +75,23 @@ public sealed class WorldQueryServiceTests
     }
 
     [Fact]
+    public void OutOfBoundsQuery_ReturnsEmptyCellWithoutCreatingChunk()
+    {
+        var worldData = new WorldData(new WorldMetadata
+        {
+            MinTileY = 0,
+            MaxTileY = 31
+        });
+        var registry = CreateRegistry();
+        var queryService = new WorldQueryService(worldData, registry);
+
+        var cell = queryService.GetCell(new WorldTileCoord(5, 40), new QueryOptions { LoadChunkIfMissing = true });
+
+        Assert.Equal(TileCell.Empty, cell);
+        Assert.False(worldData.HasChunk(new ChunkCoord(0, 1)));
+    }
+
+    [Fact]
     public void NeighborEnumeration_UsesStableOrdering()
     {
         var queryService = CreateFixture(out _, out _);

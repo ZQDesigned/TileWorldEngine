@@ -15,6 +15,8 @@ internal sealed class MonoGameFrameInputBuilder
         (Keys.D3, InputKey.D3),
         (Keys.F1, InputKey.F1),
         (Keys.F5, InputKey.F5),
+        (Keys.Enter, InputKey.Enter),
+        (Keys.Escape, InputKey.Escape),
         (Keys.W, InputKey.W),
         (Keys.A, InputKey.A),
         (Keys.S, InputKey.S),

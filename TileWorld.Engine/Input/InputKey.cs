@@ -26,43 +26,51 @@ public enum InputKey
     /// </summary>
     F5 = 4,
     /// <summary>
+    /// The <c>Enter</c> or return key.
+    /// </summary>
+    Enter = 5,
+    /// <summary>
+    /// The <c>Escape</c> key.
+    /// </summary>
+    Escape = 6,
+    /// <summary>
     /// The <c>W</c> key.
     /// </summary>
-    W = 5,
+    W = 7,
     /// <summary>
     /// The <c>A</c> key.
     /// </summary>
-    A = 6,
+    A = 8,
     /// <summary>
     /// The <c>S</c> key.
     /// </summary>
-    S = 7,
+    S = 9,
     /// <summary>
     /// The <c>D</c> key.
     /// </summary>
-    D = 8,
+    D = 10,
     /// <summary>
     /// The up-arrow key.
     /// </summary>
-    Up = 9,
+    Up = 11,
     /// <summary>
     /// The down-arrow key.
     /// </summary>
-    Down = 10,
+    Down = 12,
     /// <summary>
     /// The left-arrow key.
     /// </summary>
-    Left = 11,
+    Left = 13,
     /// <summary>
     /// The right-arrow key.
     /// </summary>
-    Right = 12,
+    Right = 14,
     /// <summary>
     /// The left shift key.
     /// </summary>
-    LeftShift = 13,
+    LeftShift = 15,
     /// <summary>
     /// The right shift key.
     /// </summary>
-    RightShift = 14
+    RightShift = 16
 }

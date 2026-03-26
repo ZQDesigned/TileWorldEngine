@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using TileWorld.Engine.Content.Items;
 using TileWorld.Engine.Content.Objects;
 using TileWorld.Engine.Content.Registry;
@@ -23,7 +24,7 @@ using TileWorld.Engine.World.Objects;
 
 namespace TileWorld.Testing.Desktop;
 
-internal sealed class SmokeTestEngineApplication : IEngineApplication
+internal sealed class SandboxWorldScene : IEngineScene
 {
     private const string DebugWhiteTextureKey = "debug/white";
     private const ushort StoneTileId = 1;
@@ -54,42 +55,51 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
     private ContentRegistry _contentRegistry = null!;
     private int _playerEntityId;
     private WorldRenderSettings _renderSettings = null!;
+    private SceneHostApplication _sceneHost = null!;
     private int _selectedPaletteIndex;
     private ToolMode _toolMode = ToolMode.Tile;
-    private string _worldPath = string.Empty;
     private WorldRenderer _worldRenderer = null!;
     private WorldRuntime _worldRuntime = null!;
+    private WorldMetadata _worldMetadata = null!;
 
-    public void Initialize()
+    public SandboxWorldScene(string worldPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(worldPath);
+        WorldPath = worldPath;
+    }
+
+    public string WorldPath { get; }
+
+    public void OnEnter(SceneHostApplication sceneHost)
     {
         if (_isInitialized)
         {
             return;
         }
 
+        _sceneHost = sceneHost ?? throw new ArgumentNullException(nameof(sceneHost));
         _contentRegistry = new ContentRegistry();
         _renderSettings = new WorldRenderSettings();
         _debugOverlayRenderer = new DebugOverlayRenderer(_renderSettings);
-        _worldPath = Path.Combine(AppContext.BaseDirectory, "Worlds", "phase-two-sandbox-world");
         RegisterContent();
 
         var worldStorage = new WorldStorage();
-        _isNewWorld = !worldStorage.HasWorld(_worldPath);
-        var metadata = _isNewWorld
-            ? new WorldMetadata
+        _worldMetadata = worldStorage.HasWorld(WorldPath)
+            ? worldStorage.LoadMetadata(WorldPath)
+            : new WorldMetadata
             {
-                WorldId = "phase-two-sandbox-world",
-                Name = "Phase Two Sandbox",
+                WorldId = Path.GetFileName(WorldPath),
+                Name = Path.GetFileName(WorldPath),
                 SpawnTile = new Int2(4, 18)
-            }
-            : worldStorage.LoadMetadata(_worldPath);
+            };
+        _isNewWorld = !HasPersistedChunkData(WorldPath);
 
         _worldRuntime = new WorldRuntime(
-            new WorldData(metadata),
+            new WorldData(_worldMetadata),
             _contentRegistry,
             new WorldRuntimeOptions
             {
-                WorldPath = _worldPath,
+                WorldPath = WorldPath,
                 WorldStorage = worldStorage,
                 SaveOnShutdown = true,
                 EnableAutoSave = true,
@@ -112,11 +122,30 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
             PopulateSmokeWorld();
         }
 
-        EnsureSpawnAreaLoaded(metadata.SpawnTile);
-        _playerEntityId = _worldRuntime.SpawnPlayer(new Float2(metadata.SpawnTile.X + 0.5f, metadata.SpawnTile.Y - 1.95f));
+        EnsureSpawnAreaLoaded(_worldMetadata.SpawnTile);
+        _playerEntityId = _worldRuntime.SpawnPlayer(new Float2(_worldMetadata.SpawnTile.X + 0.5f, _worldMetadata.SpawnTile.Y - 1.95f));
         UpdateCameraFromPlayer();
-        LogInitializationSummary(metadata);
+        LogInitializationSummary(_worldMetadata);
         _isInitialized = true;
+    }
+
+    public void OnExit()
+    {
+        if (!_isInitialized)
+        {
+            return;
+        }
+
+        _worldRuntime.Shutdown();
+        EngineDiagnostics.Info($"Sandbox world scene shutdown. WorldPath={WorldPath}.");
+        _isInitialized = false;
+        _isDebugOverlayEnabled = true;
+        _isNewWorld = false;
+        _lastFrameInput = FrameInput.Empty;
+        _selectedPaletteIndex = 0;
+        _toolMode = ToolMode.Tile;
+        _playerEntityId = 0;
+        _collectedItemCounts.Clear();
     }
 
     public void Update(FrameTime frameTime, FrameInput input)
@@ -127,6 +156,7 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
         }
 
         _lastFrameInput = input ?? FrameInput.Empty;
+        UpdateExitRequest(input);
         UpdateToolSelection(input);
         UpdateDebugOverlayToggle(input);
         UpdatePlayerControl(input);
@@ -160,23 +190,11 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
         }
     }
 
-    public void Shutdown()
+    private static bool HasPersistedChunkData(string worldPath)
     {
-        if (!_isInitialized)
-        {
-            return;
-        }
-
-        _worldRuntime.Shutdown();
-        EngineDiagnostics.Info("Smoke application shutdown.");
-        _isInitialized = false;
-        _isDebugOverlayEnabled = true;
-        _isNewWorld = false;
-        _lastFrameInput = FrameInput.Empty;
-        _selectedPaletteIndex = 0;
-        _toolMode = ToolMode.Tile;
-        _playerEntityId = 0;
-        _collectedItemCounts.Clear();
+        var chunksPath = Path.Combine(worldPath, "chunks");
+        return Directory.Exists(chunksPath) &&
+               Directory.EnumerateFiles(chunksPath, "*.chk", SearchOption.TopDirectoryOnly).Any();
     }
 
     private void RegisterContent()
@@ -429,9 +447,19 @@ internal sealed class SmokeTestEngineApplication : IEngineApplication
     {
         var spawnCell = _worldRuntime.GetCell(new WorldTileCoord(metadata.SpawnTile.X, metadata.SpawnTile.Y + 8));
         EngineDiagnostics.Info(
-            $"Smoke application initialized. World='{metadata.Name}', Mode={(_isNewWorld ? "Created" : "Loaded")}, " +
+            $"Sandbox world scene initialized. World='{metadata.Name}', Mode={(_isNewWorld ? "Created" : "Loaded")}, WorldPath='{WorldPath}', " +
             $"LoadedChunks={_worldRuntime.WorldData.LoadedChunkCount}, SpawnTile={metadata.SpawnTile}, SpawnGround={spawnCell.ForegroundTileId}, " +
             $"Selection={GetSelectionLabel()}.");
+    }
+
+    private void UpdateExitRequest(FrameInput input)
+    {
+        if (!input.KeyWentDown(InputKey.Escape))
+        {
+            return;
+        }
+
+        _sceneHost.HostServices.RequestExit();
     }
 
     private void UpdateToolSelection(FrameInput input)

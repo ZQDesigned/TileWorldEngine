@@ -29,4 +29,9 @@ public sealed class MonoGameHostOptions
     /// Gets a value indicating whether the host window can be resized by the user.
     /// </summary>
     public bool AllowUserResizing { get; init; } = true;
+
+    /// <summary>
+    /// Gets a value indicating whether the host should interpret <c>Escape</c> and the gamepad back button as an immediate exit request.
+    /// </summary>
+    public bool EnableDefaultEscapeToExit { get; init; }
 }

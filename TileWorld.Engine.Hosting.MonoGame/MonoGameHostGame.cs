@@ -6,6 +6,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using TileWorld.Engine.Core.Diagnostics;
 using TileWorld.Engine.Core.Math;
+using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Input;
 
 namespace TileWorld.Engine.Hosting.MonoGame;
@@ -17,7 +18,9 @@ internal sealed class MonoGameHostGame : Game
     private readonly GraphicsDeviceManager _graphics;
     private readonly MonoGameFrameInputBuilder _inputBuilder = new();
     private readonly MonoGameHostOptions _options;
+    private readonly MonoGameTextInputService _textInputService;
     private bool _shutdownAttempted;
+    private MonoGameHostServices _hostServices = null!;
     private MonoGameRenderContext _renderContext = null!;
     private MonoGameTextureCatalog _textureCatalog = null!;
 
@@ -31,6 +34,7 @@ internal sealed class MonoGameHostGame : Game
             PreferredBackBufferWidth = options.PreferredBackBufferWidth,
             PreferredBackBufferHeight = options.PreferredBackBufferHeight
         };
+        _textInputService = new MonoGameTextInputService(Window);
 
         IsMouseVisible = options.IsMouseVisible;
         Window.AllowUserResizing = options.AllowUserResizing;
@@ -44,6 +48,11 @@ internal sealed class MonoGameHostGame : Game
             Window.Title = _options.WindowTitle;
             EngineDiagnostics.Configure(new DebugOutputDiagnosticSink());
             EngineDiagnostics.Info("MonoGame compatibility host initialized.");
+            _hostServices = new MonoGameHostServices(this, _textInputService);
+            if (_application is IHostedEngineApplication hostedApplication)
+            {
+                hostedApplication.SetHostServices(_hostServices);
+            }
 
             _application.Initialize();
 
@@ -68,8 +77,9 @@ internal sealed class MonoGameHostGame : Game
     {
         try
         {
-            if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed ||
-                Keyboard.GetState().IsKeyDown(Keys.Escape))
+            if (_options.EnableDefaultEscapeToExit &&
+                (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed ||
+                 Keyboard.GetState().IsKeyDown(Keys.Escape)))
             {
                 Exit();
                 return;
@@ -126,6 +136,7 @@ internal sealed class MonoGameHostGame : Game
     protected override void UnloadContent()
     {
         _textureCatalog?.Dispose();
+        _textInputService.Dispose();
         base.UnloadContent();
     }
 
@@ -176,6 +187,24 @@ internal sealed class MonoGameHostGame : Game
         catch (Exception exception)
         {
             EngineDiagnostics.Error($"MonoGame compatibility host shutdown failed: {exception}");
+        }
+    }
+
+    private sealed class MonoGameHostServices : IEngineHostServices
+    {
+        private readonly Game _game;
+
+        public MonoGameHostServices(Game game, MonoGameTextInputService textInputService)
+        {
+            _game = game ?? throw new ArgumentNullException(nameof(game));
+            TextInput = textInputService ?? throw new ArgumentNullException(nameof(textInputService));
+        }
+
+        public ITextInputService TextInput { get; }
+
+        public void RequestExit()
+        {
+            _game.Exit();
         }
     }
 }

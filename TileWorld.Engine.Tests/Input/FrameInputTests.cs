@@ -29,8 +29,8 @@ public sealed class FrameInputTests
             middleButton: default,
             rightButton: default,
             mouseWheelDelta: 120,
-            keysDown: [InputKey.D1, InputKey.W],
-            keysWentDown: [InputKey.D1],
+            keysDown: [InputKey.D1, InputKey.W, InputKey.Enter],
+            keysWentDown: [InputKey.D1, InputKey.Escape],
             keysWentUp: [InputKey.F1]);
 
         Assert.Equal(new Int2(10, 20), input.MouseScreenPositionPixels);
@@ -38,7 +38,9 @@ public sealed class FrameInputTests
         Assert.True(input.LeftButton.WentDown);
         Assert.Equal(120, input.MouseWheelDelta);
         Assert.True(input.IsKeyDown(InputKey.W));
+        Assert.True(input.IsKeyDown(InputKey.Enter));
         Assert.True(input.KeyWentDown(InputKey.D1));
+        Assert.True(input.KeyWentDown(InputKey.Escape));
         Assert.True(input.KeyWentUp(InputKey.F1));
         Assert.False(input.IsKeyDown(InputKey.D3));
     }

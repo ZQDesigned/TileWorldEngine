@@ -46,7 +46,11 @@ internal sealed class SandboxWorldScene : IEngineScene
     private readonly ushort[] _wallPalette = [StoneWallId, DirtWallId, BrickWallId];
     private readonly int[] _objectPalette = [CrateObjectDefId, BenchObjectDefId, LampObjectDefId];
     private readonly Dictionary<int, int> _collectedItemCounts = new();
+    private readonly DebugBitmapFont5x7 _font = new();
+    private readonly Func<IEngineScene> _menuSceneFactory;
+    private RectI _continueButtonRect;
     private DebugOverlayRenderer _debugOverlayRenderer = null!;
+    private bool _isPauseMenuOpen;
     private FrameInput _lastFrameInput = FrameInput.Empty;
     private bool _isInitialized;
     private bool _isDebugOverlayEnabled = true;
@@ -57,14 +61,17 @@ internal sealed class SandboxWorldScene : IEngineScene
     private WorldRenderSettings _renderSettings = null!;
     private SceneHostApplication _sceneHost = null!;
     private int _selectedPaletteIndex;
+    private int _selectedPauseButtonIndex;
     private ToolMode _toolMode = ToolMode.Tile;
+    private RectI _returnToMenuButtonRect;
     private WorldRenderer _worldRenderer = null!;
     private WorldRuntime _worldRuntime = null!;
     private WorldMetadata _worldMetadata = null!;
 
-    public SandboxWorldScene(string worldPath)
+    public SandboxWorldScene(string worldPath, Func<IEngineScene> menuSceneFactory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(worldPath);
+        _menuSceneFactory = menuSceneFactory ?? throw new ArgumentNullException(nameof(menuSceneFactory));
         WorldPath = worldPath;
     }
 
@@ -140,9 +147,11 @@ internal sealed class SandboxWorldScene : IEngineScene
         EngineDiagnostics.Info($"Sandbox world scene shutdown. WorldPath={WorldPath}.");
         _isInitialized = false;
         _isDebugOverlayEnabled = true;
+        _isPauseMenuOpen = false;
         _isNewWorld = false;
         _lastFrameInput = FrameInput.Empty;
         _selectedPaletteIndex = 0;
+        _selectedPauseButtonIndex = 0;
         _toolMode = ToolMode.Tile;
         _playerEntityId = 0;
         _collectedItemCounts.Clear();
@@ -156,7 +165,11 @@ internal sealed class SandboxWorldScene : IEngineScene
         }
 
         _lastFrameInput = input ?? FrameInput.Empty;
-        UpdateExitRequest(input);
+        if (UpdatePauseMenu(input))
+        {
+            return;
+        }
+
         UpdateToolSelection(input);
         UpdateDebugOverlayToggle(input);
         UpdatePlayerControl(input);
@@ -177,7 +190,7 @@ internal sealed class SandboxWorldScene : IEngineScene
         renderContext.Clear(ColorRgba32.CornflowerBlue);
         _worldRenderer.RebuildDirtyCaches(_worldRuntime);
         _worldRenderer.Draw(_worldRuntime, renderContext);
-        if (_isDebugOverlayEnabled)
+        if (_isDebugOverlayEnabled && !_isPauseMenuOpen)
         {
             _debugOverlayRenderer.Draw(
                 _worldRuntime,
@@ -187,6 +200,11 @@ internal sealed class SandboxWorldScene : IEngineScene
                 renderContext,
                 GetSelectedTileIdForOverlay(),
                 GetSelectionLabel());
+        }
+
+        if (_isPauseMenuOpen)
+        {
+            DrawPauseOverlay(renderContext);
         }
     }
 
@@ -452,14 +470,51 @@ internal sealed class SandboxWorldScene : IEngineScene
             $"Selection={GetSelectionLabel()}.");
     }
 
-    private void UpdateExitRequest(FrameInput input)
+    private bool UpdatePauseMenu(FrameInput input)
     {
-        if (!input.KeyWentDown(InputKey.Escape))
+        if (input.KeyWentDown(InputKey.Escape))
         {
-            return;
+            _isPauseMenuOpen = !_isPauseMenuOpen;
+            _selectedPauseButtonIndex = 0;
+            EngineDiagnostics.Info($"Pause menu toggled. Open={_isPauseMenuOpen}.");
         }
 
-        _sceneHost.HostServices.RequestExit();
+        if (!_isPauseMenuOpen)
+        {
+            return false;
+        }
+
+        if (input.KeyWentDown(InputKey.Up) || input.KeyWentDown(InputKey.W) || input.KeyWentDown(InputKey.Left) || input.KeyWentDown(InputKey.A))
+        {
+            _selectedPauseButtonIndex = 0;
+        }
+        else if (input.KeyWentDown(InputKey.Down) || input.KeyWentDown(InputKey.S) || input.KeyWentDown(InputKey.Right) || input.KeyWentDown(InputKey.D))
+        {
+            _selectedPauseButtonIndex = 1;
+        }
+
+        if (input.KeyWentDown(InputKey.Enter))
+        {
+            ActivatePauseButton(_selectedPauseButtonIndex);
+            return true;
+        }
+
+        if (input.LeftButton.WentDown && input.IsMouseInsideViewport)
+        {
+            if (_continueButtonRect.Contains(input.MouseScreenPositionPixels))
+            {
+                ActivatePauseButton(0);
+                return true;
+            }
+
+            if (_returnToMenuButtonRect.Contains(input.MouseScreenPositionPixels))
+            {
+                ActivatePauseButton(1);
+                return true;
+            }
+        }
+
+        return true;
     }
 
     private void UpdateToolSelection(FrameInput input)
@@ -676,6 +731,82 @@ internal sealed class SandboxWorldScene : IEngineScene
         return _toolMode == ToolMode.Tile
             ? _tilePalette[_selectedPaletteIndex]
             : (ushort)0;
+    }
+
+    private void ActivatePauseButton(int buttonIndex)
+    {
+        switch (buttonIndex)
+        {
+            case 0:
+                _isPauseMenuOpen = false;
+                EngineDiagnostics.Info("Pause menu action: continue game.");
+                break;
+
+            case 1:
+                EngineDiagnostics.Info("Pause menu action: return to menu.");
+                _sceneHost.SwitchScene(_menuSceneFactory());
+                break;
+        }
+    }
+
+    private void DrawPauseOverlay(IRenderContext renderContext)
+    {
+        var viewport = renderContext.ViewportSizePixels;
+        DrawFilledRect(renderContext, new RectI(0, 0, viewport.X, viewport.Y), new ColorRgba32(8, 10, 14, 165), 0.85f);
+
+        var panelWidth = Math.Min(420, viewport.X - 80);
+        var panelHeight = 236;
+        var panelRect = new RectI(
+            (viewport.X - panelWidth) / 2,
+            (viewport.Y - panelHeight) / 2,
+            panelWidth,
+            panelHeight);
+
+        DrawFilledRect(renderContext, panelRect, new ColorRgba32(26, 34, 48, 240), 0.86f);
+        DrawBorder(renderContext, panelRect, new ColorRgba32(210, 226, 255), 2, 0.87f);
+        DrawText(renderContext, "GAME PAUSED", new Int2(panelRect.X + 24, panelRect.Y + 24), ColorRgba32.White, 0.88f);
+        DrawText(renderContext, "PRESS ESC TO RESUME.", new Int2(panelRect.X + 24, panelRect.Y + 56), new ColorRgba32(198, 208, 225), 0.88f);
+        DrawText(renderContext, "OR CHOOSE AN ACTION BELOW.", new Int2(panelRect.X + 24, panelRect.Y + 82), new ColorRgba32(198, 208, 225), 0.88f);
+
+        _continueButtonRect = new RectI(panelRect.X + 24, panelRect.Y + 126, panelRect.Width - 48, 40);
+        _returnToMenuButtonRect = new RectI(panelRect.X + 24, panelRect.Y + 178, panelRect.Width - 48, 40);
+
+        DrawPauseButton(renderContext, _continueButtonRect, "CONTINUE GAME", _selectedPauseButtonIndex == 0, 0.89f);
+        DrawPauseButton(renderContext, _returnToMenuButtonRect, "RETURN TO MENU", _selectedPauseButtonIndex == 1, 0.89f);
+    }
+
+    private void DrawPauseButton(IRenderContext renderContext, RectI rect, string label, bool isSelected, float layerDepth)
+    {
+        DrawFilledRect(renderContext, rect, isSelected ? new ColorRgba32(75, 112, 170) : new ColorRgba32(48, 58, 76), layerDepth);
+        DrawBorder(renderContext, rect, isSelected ? new ColorRgba32(233, 240, 255) : new ColorRgba32(126, 141, 168), 2, layerDepth + 0.001f);
+        var textWidth = _font.MeasureTextWidth(label);
+        DrawText(
+            renderContext,
+            label,
+            new Int2(rect.X + Math.Max(12, (rect.Width - textWidth) / 2), rect.Y + 12),
+            ColorRgba32.White,
+            layerDepth + 0.002f);
+    }
+
+    private void DrawFilledRect(IRenderContext renderContext, RectI rect, ColorRgba32 color, float layerDepth)
+    {
+        renderContext.DrawSprite(new SpriteDrawCommand(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), rect, color, layerDepth));
+    }
+
+    private void DrawBorder(IRenderContext renderContext, RectI rect, ColorRgba32 color, int thickness, float layerDepth)
+    {
+        DrawFilledRect(renderContext, new RectI(rect.X, rect.Y, rect.Width, thickness), color, layerDepth);
+        DrawFilledRect(renderContext, new RectI(rect.X, rect.Bottom - thickness, rect.Width, thickness), color, layerDepth);
+        DrawFilledRect(renderContext, new RectI(rect.X, rect.Y, thickness, rect.Height), color, layerDepth);
+        DrawFilledRect(renderContext, new RectI(rect.Right - thickness, rect.Y, thickness, rect.Height), color, layerDepth);
+    }
+
+    private void DrawText(IRenderContext renderContext, string text, Int2 topLeftPixels, ColorRgba32 tint, float layerDepth)
+    {
+        foreach (var command in _font.CreateDrawCommands(text, topLeftPixels, DebugWhiteTextureKey, tint, layerDepth))
+        {
+            renderContext.DrawSprite(command);
+        }
     }
 
     private enum ToolMode

@@ -5,7 +5,17 @@ namespace TileWorld.Testing.Desktop;
 internal sealed class DesktopSandboxShellApplication : SceneHostApplication
 {
     public DesktopSandboxShellApplication()
-        : base(new WorldSelectScene(static worldPath => new SandboxWorldScene(worldPath)))
+        : base(CreateWorldSelectScene())
     {
+    }
+
+    private static WorldSelectScene CreateWorldSelectScene()
+    {
+        return new WorldSelectScene(CreateSandboxWorldScene);
+    }
+
+    private static SandboxWorldScene CreateSandboxWorldScene(string worldPath)
+    {
+        return new SandboxWorldScene(worldPath, CreateWorldSelectScene);
     }
 }

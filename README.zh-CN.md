@@ -1,5 +1,7 @@
 # TileWorld Engine
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 `TileWorld.Engine` 是一个面向类泰拉瑞亚游戏的分块 2D Tile World Engine。
 
 当前仓库已经完成项目第一阶段的大里程碑：一个可工作的引擎核心，已经能够：

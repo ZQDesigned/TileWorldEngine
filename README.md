@@ -1,5 +1,7 @@
 # TileWorld Engine
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 `TileWorld.Engine` is a chunked 2D tile-world engine aimed at Terraria-like games.
 
 The current repository contains the first major milestone of the project: a working engine core that can:

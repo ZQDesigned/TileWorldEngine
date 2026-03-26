@@ -8,3 +8,7 @@ riderModule.iml
 *.DotSettings.user
 **/.vscode/
 tilemap_chunk_engine_design_draft_v6.md
+docs/_site/
+docs/api/.manifest
+docs/api/*.yml
+docs/api/toc.yml

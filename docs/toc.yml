@@ -1,0 +1,14 @@
+- name: Home
+  href: index.md
+- name: Guides
+  items:
+    - name: Getting Started
+      href: articles/getting-started.md
+    - name: Architecture Overview
+      href: articles/architecture.md
+    - name: GitHub Pages Publishing
+      href: articles/github-pages.md
+    - name: 中文概览
+      href: articles/overview.zh-CN.md
+- name: API Reference
+  href: api/index.md

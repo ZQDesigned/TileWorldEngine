@@ -51,6 +51,60 @@ public sealed class WorldGeneratorTests
     }
 
     [Fact]
+    public void OverworldGenerator_CreatesSmoothedSurfaceProfileAroundSpawn()
+    {
+        var generator = new OverworldWorldGenerator();
+        var context = CreateGenerationContext(seed: 24680);
+        var surfaceHeights = Enumerable.Range(-96, 193)
+            .Select(offset => FindSurfaceY(generator, context, context.Metadata.SpawnTile.X + offset))
+            .ToArray();
+
+        var distinctHeightCount = surfaceHeights.Distinct().Count();
+        var maxAdjacentStep = surfaceHeights
+            .Zip(surfaceHeights.Skip(1), static (left, right) => Math.Abs(right - left))
+            .Max();
+
+        Assert.True(distinctHeightCount >= 4);
+        Assert.True(maxAdjacentStep <= 2, $"Expected a smoothed surface profile, but adjacent step was {maxAdjacentStep}.");
+    }
+
+    [Fact]
+    public void OverworldGenerator_DoesNotExposeOreInNearSurfaceBand()
+    {
+        var generator = new OverworldWorldGenerator();
+        var context = CreateGenerationContext(seed: 13579);
+
+        foreach (var offset in Enumerable.Range(-96, 193))
+        {
+            var worldX = context.Metadata.SpawnTile.X + offset;
+            var surfaceY = FindSurfaceY(generator, context, worldX);
+
+            for (var worldY = surfaceY; worldY <= surfaceY + 8; worldY++)
+            {
+                Assert.NotEqual((ushort)3, GetCell(generator, context, worldX, worldY).ForegroundTileId);
+            }
+        }
+    }
+
+    [Fact]
+    public void OverworldGenerator_ProtectsSpawnFromImmediateCaves()
+    {
+        var generator = new OverworldWorldGenerator();
+        var context = CreateGenerationContext(seed: 112233);
+
+        foreach (var offset in Enumerable.Range(-20, 41))
+        {
+            var worldX = context.Metadata.SpawnTile.X + offset;
+            var surfaceY = FindSurfaceY(generator, context, worldX);
+
+            for (var worldY = surfaceY + 1; worldY <= surfaceY + 8; worldY++)
+            {
+                Assert.NotEqual((ushort)0, GetCell(generator, context, worldX, worldY).ForegroundTileId);
+            }
+        }
+    }
+
+    [Fact]
     public void Generators_RespectOptionalVerticalBounds()
     {
         var generator = new FlatDebugWorldGenerator();
@@ -159,6 +213,28 @@ public sealed class WorldGeneratorTests
         });
 
         return registry;
+    }
+
+    private static int FindSurfaceY(IWorldGenerator generator, WorldGenerationContext context, int worldX)
+    {
+        for (var worldY = context.Metadata.SpawnTile.Y - 8; worldY <= context.Metadata.SpawnTile.Y + 48; worldY++)
+        {
+            if (GetCell(generator, context, worldX, worldY).ForegroundTileId != 0)
+            {
+                return worldY;
+            }
+        }
+
+        throw new Xunit.Sdk.XunitException($"No surface tile was generated for world column {worldX}.");
+    }
+
+    private static TileCell GetCell(IWorldGenerator generator, WorldGenerationContext context, int worldX, int worldY)
+    {
+        var coord = new WorldTileCoord(worldX, worldY);
+        var chunkCoord = WorldCoordinateConverter.ToChunkCoord(coord);
+        var chunk = generator.GenerateChunk(context, chunkCoord).Chunk;
+        var localCoord = WorldCoordinateConverter.ToLocalCoord(coord);
+        return chunk.GetCell(localCoord.X, localCoord.Y);
     }
 
     private static void AssertChunksEqual(Chunk expected, Chunk actual)

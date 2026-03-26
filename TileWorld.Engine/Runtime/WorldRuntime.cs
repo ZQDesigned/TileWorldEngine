@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TileWorld.Engine.Core.Diagnostics;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Content.Registry;
@@ -141,6 +142,12 @@ public sealed class WorldRuntime
     /// </summary>
     public void Initialize()
     {
+        if (_isInitialized)
+        {
+            return;
+        }
+
+        RestorePersistedEntitiesIfNeeded();
         _isInitialized = true;
     }
 
@@ -157,6 +164,11 @@ public sealed class WorldRuntime
 
         _lastObservedUpdateTime = frameTime.TotalTime;
         EntityManager.Update(frameTime);
+        if (EntityManager.ConsumePersistenceMutationObserved())
+        {
+            _pendingMutationObserved = true;
+        }
+
         if (_pendingMutationObserved)
         {
             _lastMutationTime = frameTime.TotalTime;
@@ -505,9 +517,10 @@ public sealed class WorldRuntime
         NormalizeMetadataBeforeSave();
         Storage.SaveMetadata(Options.WorldPath, WorldData.Metadata);
         var savedChunkCount = ChunkManager.SaveDirtyChunks();
+        SavePersistentEntityState();
         _lastSaveTime = _lastObservedUpdateTime;
 
-        if (GetDirtySaveChunkCount() == 0)
+        if (GetDirtySaveChunkCount() == 0 && !EntityManager.HasPendingPersistenceChanges)
         {
             _lastMutationTime = null;
         }
@@ -566,7 +579,8 @@ public sealed class WorldRuntime
         }
 
         var dirtyChunkCount = GetDirtySaveChunkCount();
-        if (dirtyChunkCount == 0)
+        var hasPendingEntityPersistence = EntityManager.HasPendingPersistenceChanges;
+        if (dirtyChunkCount == 0 && !hasPendingEntityPersistence)
         {
             _lastMutationTime = null;
             return;
@@ -593,7 +607,7 @@ public sealed class WorldRuntime
                 : "Interval+Idle";
         var savedChunkCount = SaveWorld();
         EngineDiagnostics.Info(
-            $"WorldRuntime auto save completed. Reason={reason}, SavedDirtyChunks={savedChunkCount}.");
+            $"WorldRuntime auto save completed. Reason={reason}, SavedDirtyChunks={savedChunkCount}, SavedEntities={GetPersistedEntityCount()}.");
     }
 
     private int GetDirtySaveChunkCount()
@@ -606,5 +620,40 @@ public sealed class WorldRuntime
         }
 
         return dirtyChunkCount;
+    }
+
+    private void RestorePersistedEntitiesIfNeeded()
+    {
+        if (!IsPersistenceEnabled || EntityManager.EnumerateEntities().Any())
+        {
+            return;
+        }
+
+        var persistedPlayers = Storage.LoadPlayers(Options.WorldPath);
+        var persistedRuntimeEntities = Storage.LoadRuntimeEntities(Options.WorldPath);
+        if (persistedPlayers.Count == 0 && persistedRuntimeEntities.Count == 0)
+        {
+            return;
+        }
+
+        EntityManager.RestorePersistentState(persistedPlayers, persistedRuntimeEntities);
+        EngineDiagnostics.Info(
+            $"WorldRuntime restored persisted entities. Players={persistedPlayers.Count}, RuntimeEntities={persistedRuntimeEntities.Count}.");
+    }
+
+    private void SavePersistentEntityState()
+    {
+        var players = EntityManager.GetPersistedPlayers();
+        var runtimeEntities = EntityManager.GetPersistedRuntimeEntities();
+        Storage.SavePlayers(Options.WorldPath, players);
+        Storage.SaveRuntimeEntities(Options.WorldPath, runtimeEntities);
+        EntityManager.MarkPersistenceChangesSaved();
+        EngineDiagnostics.Info(
+            $"WorldRuntime persisted entity state. Players={players.Count}, RuntimeEntities={runtimeEntities.Count}.");
+    }
+
+    private int GetPersistedEntityCount()
+    {
+        return EntityManager.GetPersistedPlayers().Count + EntityManager.GetPersistedRuntimeEntities().Count;
     }
 }

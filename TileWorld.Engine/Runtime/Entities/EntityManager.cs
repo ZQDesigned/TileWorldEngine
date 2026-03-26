@@ -28,6 +28,8 @@ public sealed class EntityManager
     private readonly Dictionary<int, Entity> _entities = new();
     private readonly WorldEventBus _eventBus;
     private readonly Dictionary<int, PlayerInputState> _playerInputStates = new();
+    private bool _hasPendingPersistenceChanges;
+    private bool _persistenceMutationObserved;
     private int _nextEntityId = 1;
 
     /// <summary>
@@ -53,24 +55,130 @@ public sealed class EntityManager
         ArgumentNullException.ThrowIfNull(request);
 
         var entityId = _nextEntityId++;
-        var entity = new Entity
-        {
-            EntityId = entityId,
-            Type = request.Type,
-            Position = request.Position,
-            Velocity = request.Velocity,
-            LocalBounds = request.LocalBounds,
-            ItemDefId = request.ItemDefId,
-            Amount = Math.Max(1, request.Amount)
-        };
-
-        _entities.Add(entityId, entity);
-        if (entity.Type == EntityType.Drop)
-        {
-            _eventBus.Publish(new DropSpawnedEvent(entity.EntityId, entity.ItemDefId, entity.Position, entity.Amount));
-        }
+        AddEntity(
+            new Entity
+            {
+                EntityId = entityId,
+                Type = request.Type,
+                Position = request.Position,
+                Velocity = request.Velocity,
+                LocalBounds = request.LocalBounds,
+                ItemDefId = request.ItemDefId,
+                Amount = Math.Max(1, request.Amount)
+            },
+            publishSpawnEvents: true,
+            markPersistenceDirty: true);
 
         return entityId;
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether persistent entity state has changed since the last completed world save.
+    /// </summary>
+    /// <remarks>
+    /// Engine internal infrastructure API. Hosts and gameplay code should trigger persistence through
+    /// <see cref="WorldRuntime.SaveWorld"/> instead of consuming this flag directly.
+    /// </remarks>
+    internal bool HasPendingPersistenceChanges => _hasPendingPersistenceChanges;
+
+    /// <summary>
+    /// Returns snapshots of the currently persisted player entities.
+    /// </summary>
+    /// <returns>The persisted player snapshots.</returns>
+    /// <remarks>
+    /// Engine internal infrastructure API. External callers should go through runtime save/load workflows instead of
+    /// depending on the persistence snapshot shape exposed here for tests and storage plumbing.
+    /// </remarks>
+    internal IReadOnlyList<Entity> GetPersistedPlayers()
+    {
+        return CreatePersistenceSnapshot(EntityType.Player);
+    }
+
+    /// <summary>
+    /// Returns snapshots of the currently persisted non-player entities.
+    /// </summary>
+    /// <returns>The persisted non-player entity snapshots.</returns>
+    /// <remarks>
+    /// Engine internal infrastructure API. External callers should go through runtime save/load workflows instead of
+    /// depending on the persistence snapshot shape exposed here for tests and storage plumbing.
+    /// </remarks>
+    internal IReadOnlyList<Entity> GetPersistedRuntimeEntities()
+    {
+        return CreatePersistenceSnapshot(entityTypeFilter: null, includePlayers: false);
+    }
+
+    /// <summary>
+    /// Restores persisted player and non-player entity state into the current manager.
+    /// </summary>
+    /// <param name="players">The persisted player snapshots.</param>
+    /// <param name="runtimeEntities">The persisted non-player entity snapshots.</param>
+    /// <remarks>
+    /// Engine internal infrastructure API. Runtime bootstrap code should prefer <see cref="WorldRuntime"/> instead of
+    /// calling this method directly.
+    /// </remarks>
+    internal void RestorePersistentState(IReadOnlyList<Entity> players, IReadOnlyList<Entity> runtimeEntities)
+    {
+        ArgumentNullException.ThrowIfNull(players);
+        ArgumentNullException.ThrowIfNull(runtimeEntities);
+
+        _entities.Clear();
+        _playerInputStates.Clear();
+        _nextEntityId = 1;
+
+        foreach (var entity in players.OrderBy(static entity => entity.EntityId))
+        {
+            if (entity.Type != EntityType.Player)
+            {
+                continue;
+            }
+
+            AddEntity(CloneEntity(entity), publishSpawnEvents: false, markPersistenceDirty: false);
+        }
+
+        foreach (var entity in runtimeEntities.OrderBy(static entity => entity.EntityId))
+        {
+            if (entity.Type == EntityType.Player)
+            {
+                continue;
+            }
+
+            if (entity.Type == EntityType.Drop && !_contentRegistry.HasItemDef(entity.ItemDefId))
+            {
+                continue;
+            }
+
+            AddEntity(CloneEntity(entity), publishSpawnEvents: false, markPersistenceDirty: false);
+        }
+
+        _hasPendingPersistenceChanges = false;
+        _persistenceMutationObserved = false;
+    }
+
+    /// <summary>
+    /// Clears the pending persistent-entity dirty flag after a completed save.
+    /// </summary>
+    /// <remarks>
+    /// Engine internal infrastructure API. Runtime bootstrap code should prefer <see cref="WorldRuntime"/> instead of
+    /// calling this method directly.
+    /// </remarks>
+    internal void MarkPersistenceChangesSaved()
+    {
+        _hasPendingPersistenceChanges = false;
+    }
+
+    /// <summary>
+    /// Consumes the per-frame signal indicating that persisted entity state changed during the latest update.
+    /// </summary>
+    /// <returns><see langword="true"/> when persisted entity state changed since the previous call.</returns>
+    /// <remarks>
+    /// Engine internal infrastructure API. Runtime bootstrap code should prefer <see cref="WorldRuntime"/> instead of
+    /// calling this method directly.
+    /// </remarks>
+    internal bool ConsumePersistenceMutationObserved()
+    {
+        var wasObserved = _persistenceMutationObserved;
+        _persistenceMutationObserved = false;
+        return wasObserved;
     }
 
     /// <summary>
@@ -191,6 +299,9 @@ public sealed class EntityManager
     private void UpdatePlayer(Entity entity, float deltaSeconds)
     {
         _playerInputStates.TryGetValue(entity.EntityId, out var inputState);
+        var previousPosition = entity.Position;
+        var previousVelocity = entity.Velocity;
+        var previousStateFlags = entity.StateFlags;
         entity.Velocity = entity.Velocity with { X = inputState.MoveAxis * PlayerRunSpeedTilesPerSecond };
 
         if (inputState.JumpRequested && (entity.StateFlags & EntityStateFlags.Grounded) != 0)
@@ -202,10 +313,14 @@ public sealed class EntityManager
         entity.Velocity = entity.Velocity with { Y = entity.Velocity.Y + (PlayerGravityTilesPerSecondSquared * deltaSeconds) };
         _collisionService.MoveAndCollide(entity, entity.Velocity * deltaSeconds);
         _playerInputStates[entity.EntityId] = inputState with { JumpRequested = false };
+        TrackPersistenceMutation(entity, previousPosition, previousVelocity, previousStateFlags);
     }
 
     private void UpdateDrop(Entity entity, float deltaSeconds)
     {
+        var previousPosition = entity.Position;
+        var previousVelocity = entity.Velocity;
+        var previousStateFlags = entity.StateFlags;
         entity.Velocity = entity.Velocity with { Y = entity.Velocity.Y + (DropGravityTilesPerSecondSquared * deltaSeconds) };
         _collisionService.MoveAndCollide(entity, entity.Velocity * deltaSeconds);
 
@@ -217,6 +332,8 @@ public sealed class EntityManager
                 Y = 0f
             };
         }
+
+        TrackPersistenceMutation(entity, previousPosition, previousVelocity, previousStateFlags);
     }
 
     private void ResolveDropCollection()
@@ -254,7 +371,77 @@ public sealed class EntityManager
         {
             _entities.Remove(entityId);
             _playerInputStates.Remove(entityId);
+            MarkPersistenceDirty();
         }
+    }
+
+    private void AddEntity(Entity entity, bool publishSpawnEvents, bool markPersistenceDirty)
+    {
+        _entities[entity.EntityId] = entity;
+        _nextEntityId = Math.Max(_nextEntityId, entity.EntityId + 1);
+        if (publishSpawnEvents && entity.Type == EntityType.Drop)
+        {
+            _eventBus.Publish(new DropSpawnedEvent(entity.EntityId, entity.ItemDefId, entity.Position, entity.Amount));
+        }
+
+        if (markPersistenceDirty)
+        {
+            MarkPersistenceDirty();
+        }
+    }
+
+    private IReadOnlyList<Entity> CreatePersistenceSnapshot(EntityType? entityTypeFilter, bool includePlayers = true)
+    {
+        return _entities.Values
+            .Where(entity => ShouldPersist(entity) &&
+                             (entityTypeFilter is null || entity.Type == entityTypeFilter.Value) &&
+                             (includePlayers || entity.Type != EntityType.Player))
+            .OrderBy(static entity => entity.EntityId)
+            .Select(CloneEntity)
+            .ToArray();
+    }
+
+    private static Entity CloneEntity(Entity entity)
+    {
+        return new Entity
+        {
+            EntityId = entity.EntityId,
+            Type = entity.Type,
+            Position = entity.Position,
+            Velocity = entity.Velocity,
+            LocalBounds = entity.LocalBounds,
+            StateFlags = entity.StateFlags & ~EntityStateFlags.PendingRemoval,
+            ItemDefId = entity.ItemDefId,
+            Amount = entity.Amount
+        };
+    }
+
+    private void TrackPersistenceMutation(Entity entity, Float2 previousPosition, Float2 previousVelocity, EntityStateFlags previousStateFlags)
+    {
+        if (!ShouldPersist(entity))
+        {
+            return;
+        }
+
+        if (entity.Position == previousPosition &&
+            entity.Velocity == previousVelocity &&
+            entity.StateFlags == previousStateFlags)
+        {
+            return;
+        }
+
+        MarkPersistenceDirty();
+    }
+
+    private void MarkPersistenceDirty()
+    {
+        _hasPendingPersistenceChanges = true;
+        _persistenceMutationObserved = true;
+    }
+
+    private static bool ShouldPersist(Entity entity)
+    {
+        return (entity.StateFlags & EntityStateFlags.PendingRemoval) == 0;
     }
 
     private readonly record struct PlayerInputState(float MoveAxis, bool JumpRequested);

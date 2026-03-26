@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
@@ -14,13 +15,15 @@ namespace TileWorld.Engine.Storage;
 public sealed class WorldStorage
 {
     private readonly ChunkSerializer _chunkSerializer;
+    private readonly EntityPersistenceSerializer _entityPersistenceSerializer;
+    private readonly RuntimeEntityBinarySerializer _runtimeEntityBinarySerializer;
     private readonly WorldMetadataSerializer _worldMetadataSerializer;
 
     /// <summary>
     /// Creates storage services with the default metadata and chunk serializers.
     /// </summary>
     public WorldStorage()
-        : this(new WorldMetadataSerializer(), new ChunkSerializer())
+        : this(new WorldMetadataSerializer(), new ChunkSerializer(), new EntityPersistenceSerializer(), new RuntimeEntityBinarySerializer())
     {
     }
 
@@ -30,12 +33,36 @@ public sealed class WorldStorage
     /// <param name="worldMetadataSerializer">The serializer used for world metadata JSON.</param>
     /// <param name="chunkSerializer">The serializer used for binary chunk payloads.</param>
     public WorldStorage(WorldMetadataSerializer worldMetadataSerializer, ChunkSerializer chunkSerializer)
+        : this(worldMetadataSerializer, chunkSerializer, new EntityPersistenceSerializer(), new RuntimeEntityBinarySerializer())
+    {
+    }
+
+    /// <summary>
+    /// Creates storage services with explicit serializer dependencies, including runtime-entity persistence.
+    /// </summary>
+    /// <param name="worldMetadataSerializer">The serializer used for world metadata JSON.</param>
+    /// <param name="chunkSerializer">The serializer used for binary chunk payloads.</param>
+    /// <param name="entityPersistenceSerializer">The serializer used for runtime-entity JSON payloads.</param>
+    /// <param name="runtimeEntityBinarySerializer">The serializer used for persisted non-player runtime-entity binary payloads.</param>
+    /// <remarks>
+    /// Engine internal infrastructure API. Most callers should use the default constructor or inject a fully
+    /// configured <see cref="WorldStorage"/> instance through <see cref="Runtime.WorldRuntimeOptions"/>.
+    /// </remarks>
+    internal WorldStorage(
+        WorldMetadataSerializer worldMetadataSerializer,
+        ChunkSerializer chunkSerializer,
+        EntityPersistenceSerializer entityPersistenceSerializer,
+        RuntimeEntityBinarySerializer runtimeEntityBinarySerializer)
     {
         ArgumentNullException.ThrowIfNull(worldMetadataSerializer);
         ArgumentNullException.ThrowIfNull(chunkSerializer);
+        ArgumentNullException.ThrowIfNull(entityPersistenceSerializer);
+        ArgumentNullException.ThrowIfNull(runtimeEntityBinarySerializer);
 
         _worldMetadataSerializer = worldMetadataSerializer;
         _chunkSerializer = chunkSerializer;
+        _entityPersistenceSerializer = entityPersistenceSerializer;
+        _runtimeEntityBinarySerializer = runtimeEntityBinarySerializer;
     }
 
     /// <summary>
@@ -137,6 +164,79 @@ public sealed class WorldStorage
         return File.Exists(GetChunkFilePath(worldPath, coord));
     }
 
+    /// <summary>
+    /// Loads persisted player entities for the supplied world path.
+    /// </summary>
+    /// <param name="worldPath">The root path of the world on disk.</param>
+    /// <returns>The persisted player entities, or an empty collection when no player data exists.</returns>
+    /// <remarks>
+    /// Engine internal infrastructure API. Runtime bootstrap code should prefer <see cref="Runtime.WorldRuntime"/>
+    /// instead of taking a direct dependency on world storage file layout.
+    /// </remarks>
+    internal IReadOnlyList<Entity> LoadPlayers(string worldPath)
+    {
+        var playerDataFilePath = GetPlayerDataFilePath(worldPath);
+        return !File.Exists(playerDataFilePath)
+            ? []
+            : _entityPersistenceSerializer.Deserialize(File.ReadAllText(playerDataFilePath));
+    }
+
+    /// <summary>
+    /// Saves persisted player entities to the supplied world path.
+    /// </summary>
+    /// <param name="worldPath">The root path of the world on disk.</param>
+    /// <param name="players">The persisted player entities to write.</param>
+    /// <remarks>
+    /// Engine internal infrastructure API. Runtime bootstrap code should prefer <see cref="Runtime.WorldRuntime"/>
+    /// instead of taking a direct dependency on world storage file layout.
+    /// </remarks>
+    internal void SavePlayers(string worldPath, IReadOnlyList<Entity> players)
+    {
+        SaveEntityFile(GetPlayerDataDirectoryPath(worldPath), GetPlayerDataFilePath(worldPath), players);
+    }
+
+    /// <summary>
+    /// Loads persisted non-player runtime entities for the supplied world path.
+    /// </summary>
+    /// <param name="worldPath">The root path of the world on disk.</param>
+    /// <returns>The persisted non-player entities, or an empty collection when no entity data exists.</returns>
+    /// <remarks>
+    /// Engine internal infrastructure API. Runtime bootstrap code should prefer <see cref="Runtime.WorldRuntime"/>
+    /// instead of taking a direct dependency on world storage file layout.
+    /// </remarks>
+    internal IReadOnlyList<Entity> LoadRuntimeEntities(string worldPath)
+    {
+        var entityFilePath = GetRuntimeEntitiesBinaryFilePath(worldPath);
+        if (File.Exists(entityFilePath))
+        {
+            return _runtimeEntityBinarySerializer.Deserialize(File.ReadAllBytes(entityFilePath));
+        }
+
+        var legacyJsonFilePath = GetRuntimeEntitiesLegacyJsonFilePath(worldPath);
+        return File.Exists(legacyJsonFilePath)
+            ? _entityPersistenceSerializer.Deserialize(File.ReadAllText(legacyJsonFilePath))
+            : [];
+    }
+
+    /// <summary>
+    /// Saves persisted non-player runtime entities to the supplied world path.
+    /// </summary>
+    /// <param name="worldPath">The root path of the world on disk.</param>
+    /// <param name="entities">The persisted non-player entities to write.</param>
+    /// <remarks>
+    /// Engine internal infrastructure API. Runtime bootstrap code should prefer <see cref="Runtime.WorldRuntime"/>
+    /// instead of taking a direct dependency on world storage file layout.
+    /// </remarks>
+    internal void SaveRuntimeEntities(string worldPath, IReadOnlyList<Entity> entities)
+    {
+        SaveBinaryEntityFile(GetRuntimeEntitiesDirectoryPath(worldPath), GetRuntimeEntitiesBinaryFilePath(worldPath), entities);
+        var legacyJsonFilePath = GetRuntimeEntitiesLegacyJsonFilePath(worldPath);
+        if (File.Exists(legacyJsonFilePath))
+        {
+            File.Delete(legacyJsonFilePath);
+        }
+    }
+
     private static string GetMetadataFilePath(string worldPath)
     {
         return Path.Combine(worldPath, "world.json");
@@ -150,5 +250,71 @@ public sealed class WorldStorage
     private static string GetChunkFilePath(string worldPath, ChunkCoord coord)
     {
         return Path.Combine(GetChunksDirectoryPath(worldPath), $"{coord.X}_{coord.Y}.chk");
+    }
+
+    private void SaveEntityFile(string directoryPath, string filePath, IReadOnlyList<Entity> entities)
+    {
+        ArgumentNullException.ThrowIfNull(entities);
+
+        if (entities.Count == 0)
+        {
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+
+            return;
+        }
+
+        Directory.CreateDirectory(directoryPath);
+        File.WriteAllText(filePath, _entityPersistenceSerializer.Serialize(entities));
+    }
+
+    private void SaveBinaryEntityFile(string directoryPath, string filePath, IReadOnlyList<Entity> entities)
+    {
+        ArgumentNullException.ThrowIfNull(entities);
+
+        if (entities.Count == 0)
+        {
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+
+            return;
+        }
+
+        Directory.CreateDirectory(directoryPath);
+        File.WriteAllBytes(filePath, _runtimeEntityBinarySerializer.Serialize(entities));
+    }
+
+    private static string GetPlayerDataDirectoryPath(string worldPath)
+    {
+        return Path.Combine(worldPath, "playerdata");
+    }
+
+    private static string GetPlayerDataFilePath(string worldPath)
+    {
+        return Path.Combine(GetPlayerDataDirectoryPath(worldPath), "players.json");
+    }
+
+    private static string GetRuntimeEntitiesDirectoryPath(string worldPath)
+    {
+        return Path.Combine(worldPath, "entities");
+    }
+
+    private static string GetRuntimeEntitiesFilePath(string worldPath)
+    {
+        return GetRuntimeEntitiesBinaryFilePath(worldPath);
+    }
+
+    private static string GetRuntimeEntitiesBinaryFilePath(string worldPath)
+    {
+        return Path.Combine(GetRuntimeEntitiesDirectoryPath(worldPath), "entities.bin");
+    }
+
+    private static string GetRuntimeEntitiesLegacyJsonFilePath(string worldPath)
+    {
+        return Path.Combine(GetRuntimeEntitiesDirectoryPath(worldPath), "entities.json");
     }
 }

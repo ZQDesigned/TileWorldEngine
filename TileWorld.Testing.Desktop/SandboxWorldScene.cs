@@ -129,8 +129,19 @@ internal sealed class SandboxWorldScene : IEngineScene
             PopulateSmokeWorld();
         }
 
-        EnsureSpawnAreaLoaded(_worldMetadata.SpawnTile);
-        _playerEntityId = _worldRuntime.SpawnPlayer(new Float2(_worldMetadata.SpawnTile.X + 0.5f, _worldMetadata.SpawnTile.Y - 1.95f));
+        if (TryResolvePersistedPlayer(out var persistedPlayer))
+        {
+            _playerEntityId = persistedPlayer.EntityId;
+            EnsureSpawnAreaLoaded(new Int2((int)MathF.Floor(persistedPlayer.Position.X), (int)MathF.Floor(persistedPlayer.Position.Y)));
+            EngineDiagnostics.Info(
+                $"Sandbox world scene restored player state. EntityId={persistedPlayer.EntityId}, Position={persistedPlayer.Position}, Velocity={persistedPlayer.Velocity}.");
+        }
+        else
+        {
+            EnsureSpawnAreaLoaded(_worldMetadata.SpawnTile);
+            _playerEntityId = _worldRuntime.SpawnPlayer(new Float2(_worldMetadata.SpawnTile.X + 0.5f, _worldMetadata.SpawnTile.Y - 1.95f));
+        }
+
         UpdateCameraFromPlayer();
         LogInitializationSummary(_worldMetadata);
         _isInitialized = true;
@@ -468,6 +479,16 @@ internal sealed class SandboxWorldScene : IEngineScene
             $"Sandbox world scene initialized. World='{metadata.Name}', Mode={(_isNewWorld ? "Created" : "Loaded")}, WorldPath='{WorldPath}', " +
             $"LoadedChunks={_worldRuntime.WorldData.LoadedChunkCount}, SpawnTile={metadata.SpawnTile}, SpawnGround={spawnCell.ForegroundTileId}, " +
             $"Selection={GetSelectionLabel()}.");
+    }
+
+    private bool TryResolvePersistedPlayer(out TileWorld.Engine.Runtime.Entities.Entity player)
+    {
+        player = _worldRuntime.EnumerateEntities()
+            .Where(static entity => entity.Type == TileWorld.Engine.Runtime.Entities.EntityType.Player)
+            .OrderBy(static entity => entity.EntityId)
+            .FirstOrDefault()!;
+
+        return player is not null;
     }
 
     private bool UpdatePauseMenu(FrameInput input)

@@ -1,10 +1,13 @@
+using System.Linq;
 using TileWorld.Engine.Content.Registry;
+using TileWorld.Engine.Content.Items;
 using TileWorld.Engine.Content.Tiles;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Render;
 using TileWorld.Engine.Runtime;
 using TileWorld.Engine.Runtime.Contexts;
+using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.Runtime.Operations;
 using TileWorld.Engine.Storage;
 using TileWorld.Engine.Tests.Storage;
@@ -112,6 +115,35 @@ public sealed class WorldRuntimePersistenceTests
     }
 
     [Fact]
+    public void SaveWorld_RestartsWithPersistedPlayerAndDropEntities()
+    {
+        using var directory = new TestDirectoryScope();
+        var runtime = CreateRuntime(directory.Path);
+
+        runtime.Initialize();
+        var playerId = runtime.SpawnPlayer(new Float2(5.5f, 10.25f));
+        Assert.True(runtime.TryGetEntity(playerId, out var playerBeforeSave));
+        runtime.EntityManager.SpawnDrop(1001, new Float2(8.25f, 11.5f), amount: 2);
+
+        runtime.SaveWorld();
+        runtime.Shutdown();
+
+        var restoredRuntime = CreateRuntime(
+            directory.Path,
+            new WorldStorage().LoadMetadata(directory.Path));
+        restoredRuntime.Initialize();
+
+        var restoredEntities = restoredRuntime.EnumerateEntities().OrderBy(entity => entity.EntityId).ToArray();
+        var restoredPlayer = Assert.Single(restoredEntities, entity => entity.Type == EntityType.Player);
+        var restoredDrop = Assert.Single(restoredEntities, entity => entity.Type == EntityType.Drop);
+
+        Assert.Equal(playerBeforeSave.Position, restoredPlayer.Position);
+        Assert.Equal(new Float2(8.25f, 11.5f), restoredDrop.Position);
+        Assert.Equal(2, restoredDrop.Amount);
+        Assert.Equal(1001, restoredDrop.ItemDefId);
+    }
+
+    [Fact]
     public void Update_WhenIdleAutoSaveDelayElapses_PersistsDirtyChunks()
     {
         using var directory = new TestDirectoryScope();
@@ -174,6 +206,35 @@ public sealed class WorldRuntimePersistenceTests
         Assert.Equal((ushort)1, restoredChunk.GetCell(7, 3).ForegroundTileId);
     }
 
+    [Fact]
+    public void Update_WhenOnlyEntityStateIsDirty_AutoSavePersistsPlayerData()
+    {
+        using var directory = new TestDirectoryScope();
+        var runtime = CreateRuntime(
+            directory.Path,
+            options: new WorldRuntimeOptions
+            {
+                WorldPath = directory.Path,
+                WorldStorage = new WorldStorage(),
+                SaveOnShutdown = true,
+                EnableAutoSave = true,
+                AutoSaveInterval = TimeSpan.FromSeconds(2),
+                AutoSaveIdleDelay = TimeSpan.FromSeconds(20),
+                MinimumAutoSaveSpacing = TimeSpan.FromSeconds(1)
+            });
+
+        runtime.Initialize();
+        var playerId = runtime.SpawnPlayer(new Float2(1.5f, 2.5f));
+        runtime.SetPlayerInput(playerId, 1f, jumpRequested: false);
+        runtime.Update(new FrameTime(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), false));
+        runtime.Update(new FrameTime(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(1), false));
+
+        var restoredPlayers = new WorldStorage().LoadPlayers(directory.Path);
+
+        Assert.Single(restoredPlayers);
+        Assert.True(restoredPlayers[0].Position.X > 1.5f);
+    }
+
     private static WorldRuntime CreateRuntime(string worldPath, WorldMetadata metadata = null!, WorldRuntimeOptions options = null!)
     {
         var registry = new ContentRegistry();
@@ -187,6 +248,12 @@ public sealed class WorldRuntimePersistenceTests
             CanBeMined = true,
             Hardness = 1,
             AutoTileGroupId = 1,
+            Visual = new TileVisualDef("debug/white", new RectI(0, 0, 1, 1), new ColorRgba32(128, 128, 128), false)
+        });
+        registry.RegisterItem(new ItemDef
+        {
+            Id = 1001,
+            Name = "Stone Block",
             Visual = new TileVisualDef("debug/white", new RectI(0, 0, 1, 1), new ColorRgba32(128, 128, 128), false)
         });
 

@@ -8,6 +8,7 @@ using TileWorld.Engine.Content.Objects;
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Content.Tiles;
 using TileWorld.Engine.Content.Walls;
+using TileWorld.Engine.Content.Biomes;
 using TileWorld.Engine.Core.Diagnostics;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Hosting;
@@ -113,7 +114,7 @@ internal sealed class SandboxWorldScene : IEngineScene
                 AutoSaveInterval = TimeSpan.FromSeconds(30),
                 AutoSaveIdleDelay = TimeSpan.FromSeconds(4),
                 MinimumAutoSaveSpacing = TimeSpan.FromSeconds(8),
-                ActiveRadiusInChunks = 2
+                ActiveRadiusInChunks = 1
             });
         _camera = new Camera2D(new Int2(0, 0), new Int2(800, 480));
         _worldRenderer = new WorldRenderer(
@@ -124,10 +125,6 @@ internal sealed class SandboxWorldScene : IEngineScene
         SubscribeDiagnostics();
 
         _worldRuntime.Initialize();
-        if (_isNewWorld)
-        {
-            PopulateSmokeWorld();
-        }
 
         if (TryResolvePersistedPlayer(out var persistedPlayer))
         {
@@ -230,6 +227,7 @@ internal sealed class SandboxWorldScene : IEngineScene
     {
         RegisterTileDefs();
         RegisterWallDefs();
+        RegisterBiomeDefs();
         RegisterItemDefs();
         RegisterObjectDefs();
     }
@@ -305,6 +303,28 @@ internal sealed class SandboxWorldScene : IEngineScene
             CountsAsRoomWall = true,
             ObscuresBackground = true,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(148, 52, 44, 170), false)
+        });
+    }
+
+    private void RegisterBiomeDefs()
+    {
+        _contentRegistry.RegisterBiome(new BiomeDef
+        {
+            Id = 1,
+            Name = "Plains",
+            SurfaceTileId = DirtTileId,
+            SubsurfaceTileId = StoneTileId,
+            SurfaceWallId = DirtWallId,
+            Priority = 5
+        });
+        _contentRegistry.RegisterBiome(new BiomeDef
+        {
+            Id = 2,
+            Name = "Rocky",
+            SurfaceTileId = StoneTileId,
+            SubsurfaceTileId = StoneTileId,
+            SurfaceWallId = StoneWallId,
+            Priority = 10
         });
     }
 
@@ -392,7 +412,9 @@ internal sealed class SandboxWorldScene : IEngineScene
         _worldRuntime.Subscribe<ObjectRemovedEvent>(evt =>
             EngineDiagnostics.Info($"ObjectRemoved: Instance={evt.ObjectInstanceId}, Def={evt.ObjectDefId}, Anchor={evt.AnchorCoord}, Destroyed={evt.Destroyed}."));
         _worldRuntime.Subscribe<ChunkLoadedEvent>(evt =>
-            EngineDiagnostics.Info($"ChunkLoaded: Coord={evt.Coord}, FromDisk={evt.LoadedFromDisk}, CreatedNew={evt.CreatedNew}."));
+            EngineDiagnostics.Info($"ChunkLoaded: Coord={evt.Coord}, Source={evt.Source}."));
+        _worldRuntime.Subscribe<ChunkQueuedEvent>(evt =>
+            EngineDiagnostics.Trace($"ChunkQueued: Coord={evt.Coord}."));
         _worldRuntime.Subscribe<ChunkActivatedEvent>(evt =>
             EngineDiagnostics.Info($"ChunkActivated: Coord={evt.Coord}."));
         _worldRuntime.Subscribe<ChunkUnloadingEvent>(evt =>
@@ -406,67 +428,6 @@ internal sealed class SandboxWorldScene : IEngineScene
         });
     }
 
-    private void PopulateSmokeWorld()
-    {
-        var tilePlacement = new TilePlacementContext
-        {
-            ActorEntityId = 0,
-            Source = PlacementSource.WorldGeneration,
-            SuppressEvents = true
-        };
-        var objectPlacement = new ObjectPlacementContext
-        {
-            ActorEntityId = 0,
-            Source = PlacementSource.WorldGeneration,
-            SuppressEvents = true
-        };
-
-        for (var tileX = -64; tileX < 96; tileX++)
-        {
-            for (var tileY = 26; tileY < 40; tileY++)
-            {
-                _worldRuntime.PlaceTile(new WorldTileCoord(tileX, tileY), StoneTileId, tilePlacement);
-            }
-        }
-
-        for (var tileX = -20; tileX <= 14; tileX++)
-        {
-            for (var tileY = 22; tileY <= 25; tileY++)
-            {
-                _worldRuntime.PlaceTile(new WorldTileCoord(tileX, tileY), DirtTileId, tilePlacement);
-            }
-        }
-
-        for (var tileX = 29; tileX <= 35; tileX++)
-        {
-            for (var tileY = 18; tileY <= 19; tileY++)
-            {
-                _worldRuntime.PlaceTile(new WorldTileCoord(tileX, tileY), BrickTileId, tilePlacement);
-            }
-        }
-
-        for (var tileX = 4; tileX <= 12; tileX++)
-        {
-            for (var tileY = 20; tileY <= 25; tileY++)
-            {
-                _worldRuntime.SetBackgroundWall(new WorldTileCoord(tileX, tileY), StoneWallId);
-            }
-        }
-
-        for (var tileX = 30; tileX <= 34; tileX++)
-        {
-            for (var tileY = 15; tileY <= 17; tileY++)
-            {
-                _worldRuntime.SetBackgroundWall(new WorldTileCoord(tileX, tileY), BrickWallId);
-            }
-        }
-
-        _worldRuntime.PlaceObject(new WorldTileCoord(6, 24), CrateObjectDefId, objectPlacement);
-        _worldRuntime.PlaceObject(new WorldTileCoord(31, 16), BenchObjectDefId, objectPlacement);
-        _worldRuntime.PlaceObject(new WorldTileCoord(-6, 19), LampObjectDefId, objectPlacement);
-        _worldRuntime.SaveWorld();
-    }
-
     private void EnsureSpawnAreaLoaded(Int2 spawnTile)
     {
         _worldRuntime.EnsureActiveAround(new WorldTileCoord(spawnTile.X, spawnTile.Y));
@@ -477,7 +438,7 @@ internal sealed class SandboxWorldScene : IEngineScene
         var spawnCell = _worldRuntime.GetCell(new WorldTileCoord(metadata.SpawnTile.X, metadata.SpawnTile.Y + 8));
         EngineDiagnostics.Info(
             $"Sandbox world scene initialized. World='{metadata.Name}', Mode={(_isNewWorld ? "Created" : "Loaded")}, WorldPath='{WorldPath}', " +
-            $"LoadedChunks={_worldRuntime.WorldData.LoadedChunkCount}, SpawnTile={metadata.SpawnTile}, SpawnGround={spawnCell.ForegroundTileId}, " +
+            $"Generator={metadata.GeneratorId}@{metadata.GeneratorVersion}, LoadedChunks={_worldRuntime.WorldData.LoadedChunkCount}, SpawnTile={metadata.SpawnTile}, SpawnGround={spawnCell.ForegroundTileId}, " +
             $"Selection={GetSelectionLabel()}.");
     }
 

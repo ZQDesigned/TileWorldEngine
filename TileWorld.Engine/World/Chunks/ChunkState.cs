@@ -6,9 +6,10 @@ namespace TileWorld.Engine.World.Chunks;
 public enum ChunkState
 {
     Unloaded = 0,
-    Loading = 1,
-    Loaded = 2,
-    Active = 3,
-    Inactive = 4,
-    Saving = 5
+    Queued = 1,
+    Loading = 2,
+    Loaded = 3,
+    Active = 4,
+    Inactive = 5,
+    Saving = 6
 }

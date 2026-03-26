@@ -79,6 +79,7 @@ public sealed class WorldCatalogTests
             Assert.NotEqual(firstWorld.WorldPath, secondWorld.WorldPath);
             Assert.NotEqual(firstWorld.DirectoryName, secondWorld.DirectoryName);
             Assert.Equal("Sandbox World", storage.LoadMetadata(firstWorld.WorldPath).Name);
+            Assert.Equal("overworld_v1", storage.LoadMetadata(firstWorld.WorldPath).GeneratorId);
             Assert.Equal(new Int2(8, 20), storage.LoadMetadata(secondWorld.WorldPath).SpawnTile);
             Assert.False(firstWorld.HasChunkData);
             Assert.False(secondWorld.HasChunkData);

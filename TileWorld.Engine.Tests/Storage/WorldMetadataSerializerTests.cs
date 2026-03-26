@@ -20,6 +20,8 @@ public sealed class WorldMetadataSerializerTests
         Assert.Equal(metadata.Seed, restored.Seed);
         Assert.Equal(metadata.WorldFormatVersion, restored.WorldFormatVersion);
         Assert.Equal(metadata.ChunkFormatVersion, restored.ChunkFormatVersion);
+        Assert.Equal(metadata.GeneratorId, restored.GeneratorId);
+        Assert.Equal(metadata.GeneratorVersion, restored.GeneratorVersion);
         Assert.Equal(metadata.WorldTime, restored.WorldTime);
         Assert.Equal(metadata.BoundsMode, restored.BoundsMode);
         Assert.Equal(metadata.SpawnTile, restored.SpawnTile);
@@ -38,6 +40,8 @@ public sealed class WorldMetadataSerializerTests
             Seed = 77,
             WorldFormatVersion = 3,
             ChunkFormatVersion = 2,
+            GeneratorId = "flat_debug_v1",
+            GeneratorVersion = 4,
             WorldTime = 9001,
             BoundsMode = WorldBoundsMode.SemiInfinite,
             SpawnTile = new Int2(-10, 24),
@@ -52,6 +56,8 @@ public sealed class WorldMetadataSerializerTests
         Assert.Equal(metadata.Seed, restored.Seed);
         Assert.Equal(metadata.WorldFormatVersion, restored.WorldFormatVersion);
         Assert.Equal(metadata.ChunkFormatVersion, restored.ChunkFormatVersion);
+        Assert.Equal(metadata.GeneratorId, restored.GeneratorId);
+        Assert.Equal(metadata.GeneratorVersion, restored.GeneratorVersion);
         Assert.Equal(metadata.WorldTime, restored.WorldTime);
         Assert.Equal(metadata.BoundsMode, restored.BoundsMode);
         Assert.Equal(metadata.SpawnTile, restored.SpawnTile);

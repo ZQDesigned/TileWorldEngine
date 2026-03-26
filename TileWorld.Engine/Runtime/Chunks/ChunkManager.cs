@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Runtime.Events;
 using TileWorld.Engine.Runtime.Objects;
 using TileWorld.Engine.Storage;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
+using TileWorld.Engine.World.Generation;
 
 namespace TileWorld.Engine.Runtime.Chunks;
 
@@ -21,11 +23,16 @@ internal sealed class ChunkManager
 {
     private readonly HashSet<ChunkCoord> _activeChunks = [];
     private readonly int _activeRadiusInChunks;
+    private readonly ContentRegistry _contentRegistry;
     private readonly WorldEventBus _eventBus;
+    private readonly IWorldGenerator _generator;
     private ObjectManager _objectManager;
+    private readonly int _prefetchRadiusInChunks;
+    private readonly ChunkStreamingCoordinator _streamingCoordinator;
     private readonly WorldData _worldData;
     private readonly WorldStorage _worldStorage;
     private readonly string _worldPath;
+    private bool _isShutdown;
 
     /// <summary>
     /// Creates a chunk manager for a single world path.
@@ -41,6 +48,28 @@ internal sealed class ChunkManager
         string worldPath,
         int activeRadiusInChunks = 2,
         WorldEventBus eventBus = null)
+        : this(worldData, worldStorage, worldPath, contentRegistry: null, generator: null, activeRadiusInChunks, eventBus)
+    {
+    }
+
+    /// <summary>
+    /// Creates a chunk manager for a single world path with optional chunk generation support.
+    /// </summary>
+    /// <param name="worldData">The loaded world data that should receive resolved chunks.</param>
+    /// <param name="worldStorage">The storage service used to load and save chunk payloads.</param>
+    /// <param name="worldPath">The root path of the world on disk.</param>
+    /// <param name="contentRegistry">The content registry used by generated chunks.</param>
+    /// <param name="generator">The optional generator used when chunk data is not yet persisted.</param>
+    /// <param name="activeRadiusInChunks">The chunk radius that should remain active around the current center.</param>
+    /// <param name="eventBus">The event bus used to publish chunk lifecycle events.</param>
+    public ChunkManager(
+        WorldData worldData,
+        WorldStorage worldStorage,
+        string worldPath,
+        ContentRegistry contentRegistry,
+        IWorldGenerator generator,
+        int activeRadiusInChunks = 2,
+        WorldEventBus eventBus = null)
     {
         ArgumentNullException.ThrowIfNull(worldData);
         ArgumentNullException.ThrowIfNull(worldStorage);
@@ -50,7 +79,11 @@ internal sealed class ChunkManager
         _worldStorage = worldStorage;
         _worldPath = worldPath;
         _activeRadiusInChunks = Math.Max(1, activeRadiusInChunks);
+        _prefetchRadiusInChunks = _activeRadiusInChunks + 1;
+        _contentRegistry = contentRegistry;
+        _generator = generator;
         _eventBus = eventBus ?? new WorldEventBus();
+        _streamingCoordinator = new ChunkStreamingCoordinator(ResolveChunkOnBackgroundThread);
     }
 
     /// <summary>
@@ -70,26 +103,16 @@ internal sealed class ChunkManager
     /// <returns>The detailed chunk load result.</returns>
     public ChunkLoadResult GetOrLoadChunkDetailed(ChunkCoord coord)
     {
+        FlushPrefetchedChunks();
+
         if (_worldData.TryGetChunk(coord, out var loadedChunk))
         {
-            return new ChunkLoadResult(loadedChunk, WasLoadedFromMemory: true, WasLoadedFromDisk: false, WasCreatedNew: false);
+            return new ChunkLoadResult(loadedChunk, ChunkLoadSource.Memory);
         }
 
-        var payload = _worldStorage.TryLoadChunkPayload(_worldPath, coord);
-        var chunk = payload?.Chunk ?? new Chunk(coord);
-        chunk.DirtyFlags |= ChunkDirtyFlags.RenderDirty;
-        chunk.State = ChunkState.Loaded;
-        _worldData.SetChunk(chunk);
-        if (payload is not null)
-        {
-            foreach (var anchoredObject in payload.AnchoredObjects)
-            {
-                _objectManager?.RegisterLoadedObject(anchoredObject);
-            }
-        }
-
-        _eventBus.Publish(new ChunkLoadedEvent(coord, payload is not null, payload is null));
-        return new ChunkLoadResult(chunk, WasLoadedFromMemory: false, WasLoadedFromDisk: payload is not null, WasCreatedNew: payload is null);
+        var resolvedChunk = ResolveChunk(coord);
+        var chunk = IntegrateResolvedChunk(resolvedChunk);
+        return new ChunkLoadResult(chunk, resolvedChunk.Source);
     }
 
     /// <summary>
@@ -118,6 +141,7 @@ internal sealed class ChunkManager
     /// <param name="center">The center world-tile coordinate.</param>
     public void UpdateActiveSet(WorldTileCoord center)
     {
+        FlushPrefetchedChunks();
         var centerChunk = WorldCoordinateConverter.ToChunkCoord(center);
         var desiredActiveChunks = new HashSet<ChunkCoord>();
 
@@ -153,7 +177,8 @@ internal sealed class ChunkManager
             _activeChunks.Add(coord);
         }
 
-        UnloadFarChunks(center);
+        QueueOuterRing(centerChunk, desiredActiveChunks);
+        UnloadFarChunks(center, _prefetchRadiusInChunks);
     }
 
     /// <summary>
@@ -162,13 +187,101 @@ internal sealed class ChunkManager
     /// <param name="center">The center world-tile coordinate.</param>
     public void UnloadFarChunks(WorldTileCoord center)
     {
+        UnloadFarChunks(center, _activeRadiusInChunks);
+    }
+
+    /// <summary>
+    /// Integrates completed background chunk prefetch work into the live world.
+    /// </summary>
+    public void Update()
+    {
+        FlushPrefetchedChunks();
+    }
+
+    /// <summary>
+    /// Enumerates the currently active chunk coordinates.
+    /// </summary>
+    /// <returns>The currently active chunk coordinates.</returns>
+    public IEnumerable<ChunkCoord> GetActiveChunks()
+    {
+        return _activeChunks;
+    }
+
+    /// <summary>
+    /// Persists all currently loaded chunks that are marked as save-dirty.
+    /// </summary>
+    /// <returns>The number of chunks written to storage.</returns>
+    public int SaveDirtyChunks()
+    {
+        FlushPrefetchedChunks();
+        var dirtyChunks = _worldData
+            .EnumerateLoadedChunks()
+            .Where(chunk => (chunk.DirtyFlags & ChunkDirtyFlags.SaveDirty) != ChunkDirtyFlags.None)
+            .ToArray();
+
+        foreach (var chunk in dirtyChunks)
+        {
+            SaveChunk(chunk);
+            chunk.DirtyFlags &= ~ChunkDirtyFlags.SaveDirty;
+        }
+
+        return dirtyChunks.Length;
+    }
+
+    /// <summary>
+    /// Persists every currently loaded chunk regardless of dirty state.
+    /// </summary>
+    /// <returns>The number of chunks written to storage.</returns>
+    public int SaveAllLoadedChunks()
+    {
+        FlushPrefetchedChunks();
+        var savedChunkCount = 0;
+
+        foreach (var chunk in _worldData.EnumerateLoadedChunks().ToArray())
+        {
+            SaveChunk(chunk);
+            chunk.DirtyFlags &= ~ChunkDirtyFlags.SaveDirty;
+            savedChunkCount++;
+        }
+
+        return savedChunkCount;
+    }
+
+    public void AttachObjectManager(ObjectManager objectManager)
+    {
+        _objectManager = objectManager;
+    }
+
+    /// <summary>
+    /// Shuts down background prefetch work after integrating any completed chunk payloads.
+    /// </summary>
+    public void Shutdown()
+    {
+        if (_isShutdown)
+        {
+            return;
+        }
+
+        FlushPrefetchedChunks();
+        _streamingCoordinator.Shutdown();
+        _isShutdown = true;
+    }
+
+    private void SaveChunk(Chunk chunk)
+    {
+        var anchoredObjects = _objectManager?.GetPersistedObjectsForChunk(chunk.Coord) ?? [];
+        _worldStorage.SaveChunk(_worldPath, chunk, anchoredObjects);
+    }
+
+    private void UnloadFarChunks(WorldTileCoord center, int radiusInChunks)
+    {
         var centerChunk = WorldCoordinateConverter.ToChunkCoord(center);
         var unloadCandidates = _worldData
             .EnumerateLoadedChunks()
             .Select(chunk => chunk.Coord)
             .Where(coord =>
-                Math.Abs(coord.X - centerChunk.X) > _activeRadiusInChunks ||
-                Math.Abs(coord.Y - centerChunk.Y) > _activeRadiusInChunks)
+                Math.Abs(coord.X - centerChunk.X) > radiusInChunks ||
+                Math.Abs(coord.Y - centerChunk.Y) > radiusInChunks)
             .ToArray();
 
         foreach (var coord in unloadCandidates)
@@ -193,61 +306,114 @@ internal sealed class ChunkManager
         }
     }
 
-    /// <summary>
-    /// Enumerates the currently active chunk coordinates.
-    /// </summary>
-    /// <returns>The currently active chunk coordinates.</returns>
-    public IEnumerable<ChunkCoord> GetActiveChunks()
+    private void QueueOuterRing(ChunkCoord centerChunk, IReadOnlySet<ChunkCoord> desiredActiveChunks)
     {
-        return _activeChunks;
-    }
-
-    /// <summary>
-    /// Persists all currently loaded chunks that are marked as save-dirty.
-    /// </summary>
-    /// <returns>The number of chunks written to storage.</returns>
-    public int SaveDirtyChunks()
-    {
-        var dirtyChunks = _worldData
-            .EnumerateLoadedChunks()
-            .Where(chunk => (chunk.DirtyFlags & ChunkDirtyFlags.SaveDirty) != ChunkDirtyFlags.None)
-            .ToArray();
-
-        foreach (var chunk in dirtyChunks)
+        if (_isShutdown)
         {
-            SaveChunk(chunk);
-            chunk.DirtyFlags &= ~ChunkDirtyFlags.SaveDirty;
+            return;
         }
 
-        return dirtyChunks.Length;
+        for (var offsetY = -_prefetchRadiusInChunks; offsetY <= _prefetchRadiusInChunks; offsetY++)
+        {
+            for (var offsetX = -_prefetchRadiusInChunks; offsetX <= _prefetchRadiusInChunks; offsetX++)
+            {
+                var coord = centerChunk.Offset(offsetX, offsetY);
+                if (desiredActiveChunks.Contains(coord) || _worldData.HasChunk(coord))
+                {
+                    continue;
+                }
+
+                if (_streamingCoordinator.Queue(coord))
+                {
+                    _eventBus.Publish(new ChunkQueuedEvent(coord));
+                }
+            }
+        }
     }
 
-    /// <summary>
-    /// Persists every currently loaded chunk regardless of dirty state.
-    /// </summary>
-    /// <returns>The number of chunks written to storage.</returns>
-    public int SaveAllLoadedChunks()
+    private void FlushPrefetchedChunks()
     {
-        var savedChunkCount = 0;
-
-        foreach (var chunk in _worldData.EnumerateLoadedChunks().ToArray())
+        if (_isShutdown)
         {
-            SaveChunk(chunk);
-            chunk.DirtyFlags &= ~ChunkDirtyFlags.SaveDirty;
-            savedChunkCount++;
+            return;
         }
 
-        return savedChunkCount;
+        foreach (var prefetchedChunk in _streamingCoordinator.DrainCompleted())
+        {
+            IntegrateResolvedChunk(prefetchedChunk);
+        }
     }
 
-    public void AttachObjectManager(ObjectManager objectManager)
+    private Chunk IntegrateResolvedChunk(ChunkStreamingCoordinator.PrefetchedChunkResult resolvedChunk)
     {
-        _objectManager = objectManager;
+        if (_worldData.TryGetChunk(resolvedChunk.Coord, out var existingChunk))
+        {
+            return existingChunk;
+        }
+
+        var chunk = resolvedChunk.Payload.Chunk;
+        chunk.State = ChunkState.Loaded;
+        if (resolvedChunk.Source != ChunkLoadSource.Memory)
+        {
+            chunk.DirtyFlags |= ChunkDirtyFlags.RenderDirty;
+        }
+
+        if (resolvedChunk.Source == ChunkLoadSource.Generated)
+        {
+            chunk.DirtyFlags |= ChunkDirtyFlags.SaveDirty;
+        }
+
+        _worldData.SetChunk(chunk);
+        foreach (var anchoredObject in resolvedChunk.Payload.AnchoredObjects)
+        {
+            _objectManager?.RegisterLoadedObject(anchoredObject);
+        }
+
+        _eventBus.Publish(new ChunkLoadedEvent(resolvedChunk.Coord, resolvedChunk.Source));
+        return chunk;
     }
 
-    private void SaveChunk(Chunk chunk)
+    private ChunkStreamingCoordinator.PrefetchedChunkResult ResolveChunk(ChunkCoord coord)
     {
-        var anchoredObjects = _objectManager?.GetPersistedObjectsForChunk(chunk.Coord) ?? [];
-        _worldStorage.SaveChunk(_worldPath, chunk, anchoredObjects);
+        return ResolveChunkOnBackgroundThread(coord);
+    }
+
+    private ChunkStreamingCoordinator.PrefetchedChunkResult ResolveChunkOnBackgroundThread(ChunkCoord coord)
+    {
+        var payload = _worldStorage.TryLoadChunkPayload(_worldPath, coord, _worldData.Metadata);
+        if (payload is not null)
+        {
+            payload.Chunk.State = ChunkState.Loading;
+            return new ChunkStreamingCoordinator.PrefetchedChunkResult(coord, payload, ChunkLoadSource.Disk);
+        }
+
+        if (_generator is not null && _contentRegistry is not null)
+        {
+            var generatedChunk = _generator.GenerateChunk(CreateGenerationContext(), coord).Chunk;
+            generatedChunk.State = ChunkState.Loading;
+            return new ChunkStreamingCoordinator.PrefetchedChunkResult(
+                coord,
+                new ChunkStoragePayload(generatedChunk, []),
+                ChunkLoadSource.Generated);
+        }
+
+        var emptyChunk = new Chunk(coord)
+        {
+            State = ChunkState.Loading
+        };
+
+        return new ChunkStreamingCoordinator.PrefetchedChunkResult(
+            coord,
+            new ChunkStoragePayload(emptyChunk, []),
+            ChunkLoadSource.EmptyCreated);
+    }
+
+    private WorldGenerationContext CreateGenerationContext()
+    {
+        return new WorldGenerationContext
+        {
+            Metadata = _worldData.Metadata,
+            ContentRegistry = _contentRegistry
+        };
     }
 }

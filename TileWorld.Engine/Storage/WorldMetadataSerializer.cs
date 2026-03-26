@@ -34,6 +34,8 @@ public sealed class WorldMetadataSerializer
             Seed = metadata.Seed,
             WorldFormatVersion = metadata.WorldFormatVersion,
             ChunkFormatVersion = metadata.ChunkFormatVersion,
+            GeneratorId = metadata.GeneratorId,
+            GeneratorVersion = metadata.GeneratorVersion,
             WorldTime = metadata.WorldTime,
             BoundsMode = metadata.BoundsMode,
             SpawnTile = new Int2Dto
@@ -72,6 +74,8 @@ public sealed class WorldMetadataSerializer
                 Seed = dto.Seed,
                 WorldFormatVersion = dto.WorldFormatVersion,
                 ChunkFormatVersion = dto.ChunkFormatVersion,
+                GeneratorId = dto.GeneratorId ?? string.Empty,
+                GeneratorVersion = dto.GeneratorVersion,
                 WorldTime = dto.WorldTime,
                 BoundsMode = dto.BoundsMode,
                 SpawnTile = new Int2(dto.SpawnTile?.X ?? 0, dto.SpawnTile?.Y ?? 0),
@@ -105,6 +109,10 @@ public sealed class WorldMetadataSerializer
         public int WorldFormatVersion { get; set; }
 
         public int ChunkFormatVersion { get; set; }
+
+        public string GeneratorId { get; set; } = string.Empty;
+
+        public int GeneratorVersion { get; set; }
 
         public long WorldTime { get; set; }
 

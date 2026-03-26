@@ -21,4 +21,9 @@ public sealed class WorldCreationOptions
     /// Gets an optional explicit seed for the new world.
     /// </summary>
     public int? Seed { get; init; }
+
+    /// <summary>
+    /// Gets the generator identifier that should be used for the new world.
+    /// </summary>
+    public string GeneratorId { get; init; } = "overworld_v1";
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using TileWorld.Engine.Core.Diagnostics;
 using TileWorld.Engine.Core.Math;
+using TileWorld.Engine.Content.Biomes;
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Runtime.AutoTile;
@@ -20,6 +21,7 @@ using TileWorld.Engine.World;
 using TileWorld.Engine.World.Cells;
 using TileWorld.Engine.World.Coordinates;
 using TileWorld.Engine.World.Objects;
+using TileWorld.Engine.World.Generation;
 
 namespace TileWorld.Engine.Runtime;
 
@@ -33,6 +35,8 @@ namespace TileWorld.Engine.Runtime;
 public sealed class WorldRuntime
 {
     private bool _isInitialized;
+    private readonly IWorldGenerator _worldGenerator;
+    private readonly WorldGeneratorRegistry _worldGeneratorRegistry;
     private TimeSpan? _lastMutationTime;
     private TimeSpan _lastObservedUpdateTime;
     private TimeSpan _lastSaveTime;
@@ -62,13 +66,15 @@ public sealed class WorldRuntime
         WorldData = worldData;
         ContentRegistry = contentRegistry;
         Options = options ?? new WorldRuntimeOptions();
+        _worldGeneratorRegistry = WorldGeneratorRegistry.CreateDefault();
+        _worldGenerator = _worldGeneratorRegistry.ResolveOrDefault(worldData.Metadata.GeneratorId);
         EventBus = new WorldEventBus();
         EventBus.Subscribe<TileChangedEvent>(_ => _pendingMutationObserved = true);
         EventBus.Subscribe<ObjectPlacedEvent>(_ => _pendingMutationObserved = true);
         EventBus.Subscribe<ObjectRemovedEvent>(_ => _pendingMutationObserved = true);
 
         Storage = CreateWorldStorage(Options);
-        ChunkManager = CreateChunkManager(worldData, Storage, Options, EventBus);
+        ChunkManager = CreateChunkManager(worldData, contentRegistry, Storage, _worldGenerator, Options, EventBus);
         QueryService = new WorldQueryService(worldData, contentRegistry, chunkManager: ChunkManager);
         DirtyTracker = new DirtyTracker(worldData);
         EntityManager = new EntityManager(new TileCollisionService(QueryService), contentRegistry, EventBus);
@@ -163,6 +169,7 @@ public sealed class WorldRuntime
         }
 
         _lastObservedUpdateTime = frameTime.TotalTime;
+        ChunkManager?.Update();
         EntityManager.Update(frameTime);
         if (EntityManager.ConsumePersistenceMutationObserved())
         {
@@ -188,6 +195,7 @@ public sealed class WorldRuntime
             SaveWorld();
         }
 
+        ChunkManager?.Shutdown();
         _isInitialized = false;
     }
 
@@ -323,9 +331,17 @@ public sealed class WorldRuntime
     /// <returns>The detailed chunk load result.</returns>
     public ChunkLoadResult LoadChunk(ChunkCoord coord)
     {
-        return ChunkManager is not null
-            ? ChunkManager.GetOrLoadChunkDetailed(coord)
-            : new ChunkLoadResult(WorldData.GetOrCreateChunk(coord), true, false, false);
+        if (ChunkManager is not null)
+        {
+            return ChunkManager.GetOrLoadChunkDetailed(coord);
+        }
+
+        if (WorldData.TryGetChunk(coord, out var loadedChunk))
+        {
+            return new ChunkLoadResult(loadedChunk, ChunkLoadSource.Memory);
+        }
+
+        return new ChunkLoadResult(WorldData.GetOrCreateChunk(coord), ChunkLoadSource.EmptyCreated);
     }
 
     /// <summary>
@@ -355,6 +371,33 @@ public sealed class WorldRuntime
     public IEnumerable<ChunkCoord> GetActiveChunks()
     {
         return ChunkManager?.GetActiveChunks() ?? [];
+    }
+
+    /// <summary>
+    /// Resolves the derived biome identifier at a world-tile coordinate.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <returns>The derived biome identifier for the coordinate.</returns>
+    public int GetBiomeId(WorldTileCoord coord)
+    {
+        return _worldGenerator.GetBiomeId(
+            new WorldGenerationContext
+            {
+                Metadata = WorldData.Metadata,
+                ContentRegistry = ContentRegistry
+            },
+            coord);
+    }
+
+    /// <summary>
+    /// Attempts to resolve the biome definition at a world-tile coordinate.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <param name="biomeDef">The resolved biome definition when registered.</param>
+    /// <returns><see langword="true"/> when a registered biome definition was resolved.</returns>
+    public bool TryGetBiomeDef(WorldTileCoord coord, out BiomeDef biomeDef)
+    {
+        return ContentRegistry.TryGetBiomeDef(GetBiomeId(coord), out biomeDef);
     }
 
     /// <summary>
@@ -531,26 +574,38 @@ public sealed class WorldRuntime
     private void NormalizeMetadataBeforeSave()
     {
         var metadata = WorldData.Metadata;
-        if (metadata.ChunkFormatVersion == 2 &&
+        var generatorMatchesMetadata = string.Equals(metadata.GeneratorId, _worldGenerator.GeneratorId, StringComparison.OrdinalIgnoreCase);
+        var normalizedMetadata = new WorldMetadata
+        {
+            WorldId = metadata.WorldId,
+            Name = metadata.Name,
+            Seed = metadata.Seed,
+            WorldFormatVersion = Math.Max(2, metadata.WorldFormatVersion),
+            ChunkFormatVersion = 2,
+            GeneratorId = string.IsNullOrWhiteSpace(metadata.GeneratorId) || !generatorMatchesMetadata
+                ? _worldGenerator.GeneratorId
+                : metadata.GeneratorId,
+            GeneratorVersion = metadata.GeneratorVersion > 0 && generatorMatchesMetadata
+                ? metadata.GeneratorVersion
+                : _worldGenerator.GeneratorVersion,
+            WorldTime = metadata.WorldTime,
+            BoundsMode = metadata.BoundsMode,
+            SpawnTile = metadata.SpawnTile,
+            ChunkWidth = World.Chunks.ChunkDimensions.Width,
+            ChunkHeight = World.Chunks.ChunkDimensions.Height
+        };
+
+        if (metadata.WorldFormatVersion == normalizedMetadata.WorldFormatVersion &&
+            metadata.ChunkFormatVersion == normalizedMetadata.ChunkFormatVersion &&
+            string.Equals(metadata.GeneratorId, normalizedMetadata.GeneratorId, StringComparison.Ordinal) &&
+            metadata.GeneratorVersion == normalizedMetadata.GeneratorVersion &&
             metadata.ChunkWidth == World.Chunks.ChunkDimensions.Width &&
             metadata.ChunkHeight == World.Chunks.ChunkDimensions.Height)
         {
             return;
         }
 
-        WorldData.UpdateMetadata(new WorldMetadata
-        {
-            WorldId = metadata.WorldId,
-            Name = metadata.Name,
-            Seed = metadata.Seed,
-            WorldFormatVersion = metadata.WorldFormatVersion,
-            ChunkFormatVersion = 2,
-            WorldTime = metadata.WorldTime,
-            BoundsMode = metadata.BoundsMode,
-            SpawnTile = metadata.SpawnTile,
-            ChunkWidth = World.Chunks.ChunkDimensions.Width,
-            ChunkHeight = World.Chunks.ChunkDimensions.Height
-        });
+        WorldData.UpdateMetadata(normalizedMetadata);
     }
 
     private static WorldStorage CreateWorldStorage(WorldRuntimeOptions options)
@@ -562,12 +617,14 @@ public sealed class WorldRuntime
 
     private static ChunkManager CreateChunkManager(
         WorldData worldData,
+        ContentRegistry contentRegistry,
         WorldStorage storage,
+        IWorldGenerator generator,
         WorldRuntimeOptions options,
         WorldEventBus eventBus)
     {
         return storage is not null
-            ? new ChunkManager(worldData, storage, options.WorldPath, options.ActiveRadiusInChunks, eventBus)
+            ? new ChunkManager(worldData, storage, options.WorldPath, contentRegistry, generator, options.ActiveRadiusInChunks, eventBus)
             : null;
     }
 

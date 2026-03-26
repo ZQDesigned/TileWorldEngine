@@ -2,7 +2,14 @@
 
 Welcome to the documentation site for `TileWorld.Engine`.
 
-This site is generated with DocFX and published through GitHub Pages. It documents the current phase-one engine surface, the architecture behind the project, and the public API exposed by the runtime and hosting layers.
+This site is generated with DocFX and published through GitHub Pages. It documents the current engine surface, the project architecture, and the public API exposed by the runtime and hosting layers.
+
+The project has already moved beyond its initial bootstrap milestone. The current codebase includes:
+
+- the chunk-first runtime core,
+- object and entity gameplay foundations,
+- Desktop sandbox flows,
+- the first slice of phase 4: procedural world generation, biome queries, chunk source tracking, and chunk streaming foundations.
 
 ## Start Here
 
@@ -15,7 +22,7 @@ This site is generated with DocFX and published through GitHub Pages. It documen
 ## Repository Documents
 
 - [Repository README (English)](https://github.com/ZQDesigned/TileWorldEngine/blob/master/README.md)
-- [Repository README (简体中文)](https://github.com/ZQDesigned/TileWorldEngine/blob/master/README.zh-CN.md)
+- [Repository README (Simplified Chinese)](https://github.com/ZQDesigned/TileWorldEngine/blob/master/README.zh-CN.md)
 
 ## Current Scope
 
@@ -24,5 +31,6 @@ The current documentation covers:
 - the chunk-first tile-world architecture,
 - the stable gameplay-facing runtime facade,
 - the MonoGame compatibility host boundary,
-- local development and smoke-test usage,
-- GitHub Pages publishing workflow.
+- persistence, generation, and streaming foundations,
+- local development and Desktop sandbox usage,
+- the GitHub Pages publishing workflow.

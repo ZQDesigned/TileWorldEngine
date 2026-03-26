@@ -17,13 +17,19 @@ public sealed class WorldStorage
     private readonly ChunkSerializer _chunkSerializer;
     private readonly EntityPersistenceSerializer _entityPersistenceSerializer;
     private readonly RuntimeEntityBinarySerializer _runtimeEntityBinarySerializer;
+    private readonly WorldSaveMigrationService _worldSaveMigrationService;
     private readonly WorldMetadataSerializer _worldMetadataSerializer;
 
     /// <summary>
     /// Creates storage services with the default metadata and chunk serializers.
     /// </summary>
     public WorldStorage()
-        : this(new WorldMetadataSerializer(), new ChunkSerializer(), new EntityPersistenceSerializer(), new RuntimeEntityBinarySerializer())
+        : this(
+            new WorldMetadataSerializer(),
+            new ChunkSerializer(),
+            new EntityPersistenceSerializer(),
+            new RuntimeEntityBinarySerializer(),
+            new WorldSaveMigrationService())
     {
     }
 
@@ -33,7 +39,12 @@ public sealed class WorldStorage
     /// <param name="worldMetadataSerializer">The serializer used for world metadata JSON.</param>
     /// <param name="chunkSerializer">The serializer used for binary chunk payloads.</param>
     public WorldStorage(WorldMetadataSerializer worldMetadataSerializer, ChunkSerializer chunkSerializer)
-        : this(worldMetadataSerializer, chunkSerializer, new EntityPersistenceSerializer(), new RuntimeEntityBinarySerializer())
+        : this(
+            worldMetadataSerializer,
+            chunkSerializer,
+            new EntityPersistenceSerializer(),
+            new RuntimeEntityBinarySerializer(),
+            new WorldSaveMigrationService())
     {
     }
 
@@ -44,6 +55,7 @@ public sealed class WorldStorage
     /// <param name="chunkSerializer">The serializer used for binary chunk payloads.</param>
     /// <param name="entityPersistenceSerializer">The serializer used for runtime-entity JSON payloads.</param>
     /// <param name="runtimeEntityBinarySerializer">The serializer used for persisted non-player runtime-entity binary payloads.</param>
+    /// <param name="worldSaveMigrationService">The migration service used to upgrade persisted metadata and chunk payloads in memory.</param>
     /// <remarks>
     /// Engine internal infrastructure API. Most callers should use the default constructor or inject a fully
     /// configured <see cref="WorldStorage"/> instance through <see cref="Runtime.WorldRuntimeOptions"/>.
@@ -52,17 +64,20 @@ public sealed class WorldStorage
         WorldMetadataSerializer worldMetadataSerializer,
         ChunkSerializer chunkSerializer,
         EntityPersistenceSerializer entityPersistenceSerializer,
-        RuntimeEntityBinarySerializer runtimeEntityBinarySerializer)
+        RuntimeEntityBinarySerializer runtimeEntityBinarySerializer,
+        WorldSaveMigrationService worldSaveMigrationService)
     {
         ArgumentNullException.ThrowIfNull(worldMetadataSerializer);
         ArgumentNullException.ThrowIfNull(chunkSerializer);
         ArgumentNullException.ThrowIfNull(entityPersistenceSerializer);
         ArgumentNullException.ThrowIfNull(runtimeEntityBinarySerializer);
+        ArgumentNullException.ThrowIfNull(worldSaveMigrationService);
 
         _worldMetadataSerializer = worldMetadataSerializer;
         _chunkSerializer = chunkSerializer;
         _entityPersistenceSerializer = entityPersistenceSerializer;
         _runtimeEntityBinarySerializer = runtimeEntityBinarySerializer;
+        _worldSaveMigrationService = worldSaveMigrationService;
     }
 
     /// <summary>
@@ -83,7 +98,8 @@ public sealed class WorldStorage
     public WorldMetadata LoadMetadata(string worldPath)
     {
         var metadataPath = GetMetadataFilePath(worldPath);
-        return _worldMetadataSerializer.Deserialize(File.ReadAllText(metadataPath));
+        return _worldSaveMigrationService.MigrateMetadata(
+            _worldMetadataSerializer.Deserialize(File.ReadAllText(metadataPath)));
     }
 
     /// <summary>
@@ -125,6 +141,24 @@ public sealed class WorldStorage
         return !File.Exists(chunkFilePath)
             ? null
             : _chunkSerializer.DeserializePayload(File.ReadAllBytes(chunkFilePath), coord);
+    }
+
+    /// <summary>
+    /// Attempts to load persisted chunk data, including anchored objects, and applies in-memory migrations when needed.
+    /// </summary>
+    /// <param name="worldPath">The root path of the world on disk.</param>
+    /// <param name="coord">The chunk coordinate to load.</param>
+    /// <param name="metadata">The migrated world metadata currently associated with the runtime.</param>
+    /// <returns>The migrated chunk payload when persisted data exists; otherwise <see langword="null"/>.</returns>
+    internal ChunkStoragePayload TryLoadChunkPayload(string worldPath, ChunkCoord coord, WorldMetadata metadata)
+    {
+        var chunkFilePath = GetChunkFilePath(worldPath, coord);
+        return !File.Exists(chunkFilePath)
+            ? null
+            : _worldSaveMigrationService.MigrateChunkPayload(
+                _chunkSerializer.DeserializePayload(File.ReadAllBytes(chunkFilePath), coord),
+                metadata,
+                coord);
     }
 
     /// <summary>

@@ -126,4 +126,32 @@ public sealed class WorldStorageTests
         Assert.Equal(1001, restoredEntity.ItemDefId);
         Assert.Equal(2, restoredEntity.Amount);
     }
+
+    [Fact]
+    public void LoadMetadata_MigratesLegacyWorldFormatMetadata()
+    {
+        using var directory = new TestDirectoryScope();
+        File.WriteAllText(
+            Path.Combine(directory.Path, "world.json"),
+            """
+            {
+              "worldId": "legacy-world",
+              "name": "Legacy World",
+              "seed": 42,
+              "worldFormatVersion": 1,
+              "chunkFormatVersion": 1,
+              "worldTime": 12,
+              "boundsMode": 0,
+              "spawnTile": { "x": 4, "y": 18 },
+              "chunkWidth": 32,
+              "chunkHeight": 32
+            }
+            """);
+
+        var metadata = new WorldStorage().LoadMetadata(directory.Path);
+
+        Assert.Equal(2, metadata.WorldFormatVersion);
+        Assert.Equal("legacy_flat_v1", metadata.GeneratorId);
+        Assert.Equal(1, metadata.GeneratorVersion);
+    }
 }

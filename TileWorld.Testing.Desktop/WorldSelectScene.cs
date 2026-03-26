@@ -166,6 +166,7 @@ internal sealed class WorldSelectScene : IEngineScene
         var createdWorld = _worldCatalog.CreateWorld(new WorldCreationOptions
         {
             Name = worldName.Trim(),
+            GeneratorId = "overworld_v1",
             SpawnTile = new Int2(4, 18)
         });
         EngineDiagnostics.Info($"WorldSelectScene created new world. Name='{createdWorld.Name}', Directory='{createdWorld.DirectoryName}'.");

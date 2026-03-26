@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TileWorld.Engine.Content.Biomes;
 using TileWorld.Engine.Content.Items;
 using TileWorld.Engine.Content.Objects;
 using TileWorld.Engine.Content.Tiles;
@@ -12,6 +13,7 @@ namespace TileWorld.Engine.Content.Registry;
 /// </summary>
 public sealed class ContentRegistry
 {
+    private readonly Dictionary<int, BiomeDef> _biomeDefs = new();
     private readonly Dictionary<int, ItemDef> _itemDefs = new();
     private readonly Dictionary<int, ObjectDef> _objectDefs = new();
     private readonly Dictionary<ushort, TileDef> _tileDefs = new();
@@ -164,6 +166,67 @@ public sealed class ContentRegistry
     public IEnumerable<WallDef> EnumerateWallDefs()
     {
         return _wallDefs.Values;
+    }
+
+    /// <summary>
+    /// Registers a biome definition by its numeric identifier.
+    /// </summary>
+    /// <param name="biomeDef">The biome definition to register.</param>
+    public void RegisterBiome(BiomeDef biomeDef)
+    {
+        ArgumentNullException.ThrowIfNull(biomeDef);
+
+        if (_biomeDefs.ContainsKey(biomeDef.Id))
+        {
+            throw new InvalidOperationException($"A biome definition with id {biomeDef.Id} is already registered.");
+        }
+
+        _biomeDefs.Add(biomeDef.Id, biomeDef);
+    }
+
+    /// <summary>
+    /// Resolves a biome definition or throws when the identifier is unknown.
+    /// </summary>
+    /// <param name="id">The numeric biome identifier.</param>
+    /// <returns>The registered biome definition.</returns>
+    public BiomeDef GetBiomeDef(int id)
+    {
+        if (!TryGetBiomeDef(id, out var biomeDef))
+        {
+            throw new KeyNotFoundException($"No biome definition is registered for id {id}.");
+        }
+
+        return biomeDef;
+    }
+
+    /// <summary>
+    /// Attempts to resolve a biome definition for the supplied identifier.
+    /// </summary>
+    /// <param name="id">The numeric biome identifier.</param>
+    /// <param name="biomeDef">The resolved biome definition when the lookup succeeds.</param>
+    /// <returns><see langword="true"/> when the identifier is registered.</returns>
+    public bool TryGetBiomeDef(int id, out BiomeDef biomeDef)
+    {
+        return _biomeDefs.TryGetValue(id, out biomeDef!);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the supplied biome identifier is registered.
+    /// </summary>
+    /// <param name="id">The numeric biome identifier.</param>
+    /// <returns><see langword="true"/> when the identifier is registered.</returns>
+    public bool HasBiomeDef(int id)
+    {
+        return _biomeDefs.ContainsKey(id);
+    }
+
+    /// <summary>
+    /// Enumerates all registered biome definitions.
+    /// </summary>
+    /// <returns>An enumeration of all registered biome definitions.</returns>
+    public IEnumerable<BiomeDef> EnumerateBiomeDefs()
+    {
+        return _biomeDefs.Values;
     }
 
     /// <summary>

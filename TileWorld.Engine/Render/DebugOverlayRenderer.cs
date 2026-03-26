@@ -81,6 +81,8 @@ public sealed class DebugOverlayRenderer
         var hoveredChunkCoord = default(ChunkCoord?);
         var hoveredLocalCoord = default(Int2?);
         var hoveredCell = TileCell.Empty;
+        var hoveredBiomeId = 0;
+        var hoveredBiomeName = string.Empty;
         var hoveredDirtyFlags = ChunkDirtyFlags.None;
         var hoveredChunkLoaded = false;
         var hoveredObjectLine = string.Empty;
@@ -92,6 +94,10 @@ public sealed class DebugOverlayRenderer
             hoveredChunkCoord = WorldCoordinateConverter.ToChunkCoord(tileCoord);
             hoveredLocalCoord = WorldCoordinateConverter.ToLocalCoord(tileCoord);
             hoveredCell = runtime.QueryService.GetCell(tileCoord);
+            hoveredBiomeId = runtime.GetBiomeId(tileCoord);
+            hoveredBiomeName = runtime.TryGetBiomeDef(tileCoord, out var hoveredBiomeDef)
+                ? hoveredBiomeDef.Name.ToUpperInvariant()
+                : "UNKNOWN";
             hoveredChunkLoaded = runtime.WorldData.TryGetChunk(hoveredChunkCoord.Value, out var hoveredChunk);
             hoveredDirtyFlags = hoveredChunkLoaded ? hoveredChunk.DirtyFlags : ChunkDirtyFlags.None;
             if (runtime.QueryService.TryGetObjectAt(tileCoord, out var hoveredObject) &&
@@ -112,6 +118,8 @@ public sealed class DebugOverlayRenderer
             hoveredChunkCoord,
             hoveredLocalCoord,
             hoveredCell,
+            hoveredBiomeId,
+            hoveredBiomeName,
             hoveredDirtyFlags,
             hoveredChunkLoaded,
             hoveredObjectLine);
@@ -210,6 +218,8 @@ public sealed class DebugOverlayRenderer
         ChunkCoord? hoveredChunkCoord,
         Int2? hoveredLocalCoord,
         TileCell hoveredCell,
+        int hoveredBiomeId,
+        string hoveredBiomeName,
         ChunkDirtyFlags hoveredDirtyFlags,
         bool hoveredChunkLoaded,
         string hoveredObjectLine)
@@ -238,6 +248,7 @@ public sealed class DebugOverlayRenderer
         lines.Add($"TILE: {tileCoord.X.ToString(CultureInfo.InvariantCulture)},{tileCoord.Y.ToString(CultureInfo.InvariantCulture)}");
         lines.Add($"CHUNK: {chunkCoord.X.ToString(CultureInfo.InvariantCulture)},{chunkCoord.Y.ToString(CultureInfo.InvariantCulture)}");
         lines.Add($"LOCAL: {localCoord.X.ToString(CultureInfo.InvariantCulture)},{localCoord.Y.ToString(CultureInfo.InvariantCulture)}");
+        lines.Add($"BIOME: {hoveredBiomeId.ToString(CultureInfo.InvariantCulture)} {hoveredBiomeName}");
         lines.Add($"FG TILE: {hoveredCell.ForegroundTileId.ToString(CultureInfo.InvariantCulture)}");
         lines.Add(
             $"VARIANT: {hoveredCell.Variant.ToString(CultureInfo.InvariantCulture)} FLAGS: {hoveredCell.Flags.ToString(CultureInfo.InvariantCulture)}");

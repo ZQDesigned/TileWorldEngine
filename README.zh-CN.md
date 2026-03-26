@@ -2,131 +2,126 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-`TileWorld.Engine` 是一个面向类泰拉瑞亚游戏的分块 2D Tile World Engine。
+`TileWorld.Engine` 是一个以分块 Tile 世界为核心、面向 Terraria-like 沙盒游戏的 2D 引擎。
 
-当前仓库已经完成项目第一阶段的大里程碑：一个可工作的引擎核心，已经能够：
+当前仓库已经不再停留在“只完成第一阶段”的状态。现在它已经具备：
 
-- 创建并持久化分块 Tile 世界；
-- 通过统一的运行时门面对 Tile 进行查询与修改；
-- 对脏 Chunk 重建渲染缓存；
-- 通过引擎自有的应用生命周期接口驱动运行；
-- 在不让应用项目直接依赖 MonoGame 的前提下，启动一个桌面测试游戏。
+- 稳定的世界运行时门面，
+- 分块世界持久化，
+- 脏标记传播与 AutoTile 刷新，
+- 背景墙、对象、玩家、掉落物等原型系统，
+- 与渲染后端解耦的绘制命令管线，
+- 将 MonoGame 留在兼容宿主层的启动方案，
+- 带存档选择、世界内交互和调试工具的 Desktop 沙盒壳，
+- 第四阶段起步能力：程序化世界生成、群系查询、Chunk 来源跟踪、流式加载基础。
 
 ## 设计理念
 
-Unity 通常会以 `GameObject / Component / ECS-oriented` 这样的心智模型来理解。
+Unity 常常会以 `GameObject / Component / ECS-oriented` 的思维方式来理解。
 
-`TileWorld.Engine` 的架构重心并不一样：
+`TileWorld.Engine` 的中心则不同：
 
-- `Tile-first`：Tile Cell 是最小的交互世界单元；
-- `Chunk-first`：Chunk 是最小的加载、保存、脏标记和渲染缓存单元；
-- `Facade-first`：游戏逻辑和工具层应优先通过 `WorldRuntime` 访问世界，而不是手动拼装底层服务；
-- `Backend-decoupled`：核心引擎不暴露 MonoGame 类型；渲染与宿主生命周期集成放在兼容层中；
-- `Explicit data flow`：世界数据、编辑、自动连接、脏传播、渲染缓存重建、存储都是边界清晰的独立系统。
+- `Tile-first`：Tile Cell 是最小交互单元。
+- `Chunk-first`：Chunk 是最小的加载、保存、脏标记和渲染缓存单元。
+- `Facade-first`：游戏逻辑与工具层应优先通过 `WorldRuntime` 使用引擎，而不是直接拼接底层服务。
+- `Backend-decoupled`：核心引擎不暴露 MonoGame 类型。渲染与宿主生命周期放在兼容层中。
+- `Explicit data flow`：世界数据、编辑、AutoTile、脏传播、渲染缓存、对象占位、实体模拟、存储流程都保持明确边界。
 
-换句话说，这个项目并不是在做一个“通用场景图引擎”，而是在做一个“以分块地形世界为架构主轴”的专用运行时。
+这个项目不是在做一个“通用场景图引擎”，而是在做一个“以 Chunk 化地形世界为主轴”的专用运行时。
 
 ## 当前已实现内容
 
-第一阶段已经在功能上闭环。
+目前已经落地的能力包括：
 
-当前已完成的模块包括：
-
-- Core Math 与 Diagnostics 基础设施
-- 世界元数据、Chunk 容器、坐标转换、Tile Cell 存储
-- Content Registry 与 Tile Definition
-- 查询 / 编辑链路与 Chunk 脏标记传播
-- 最小 AutoTile 系统
-- Chunk Render Cache Builder 与 World Renderer
-- `world.json` + 二进制 Chunk 的持久化
-- 自动保存与关闭保存
-- 引擎自有的应用生命周期抽象
-- 独立的 MonoGame 兼容宿主项目
-- 带调试覆盖层和交互编辑能力的 Desktop 测试应用
+- Core Math、Diagnostics、Input、Hosting 抽象
+- 世界元数据、Chunk 容器、坐标换算、Tile Cell 存储
+- Tile / Wall / Object / Item / Biome 内容注册
+- 查询 / 编辑链路、脏标记传播、AutoTile
+- Chunk 渲染缓存构建与后端无关的世界渲染
+- 二进制 Chunk 持久化，以及独立的玩家 / 运行时实体存档
+- Active Chunk 管理、卸载流程、外围 Chunk 后台预取
+- 静态对象占位、支撑规则与对象持久化
+- 基础实体模拟、玩家移动、掉落物与 Tile 碰撞
+- 基于生成器的新世界初始化与群系查询
+- 带世界选择、暂停蒙层、调试覆盖层、存读档验证链路的 Desktop 沙盒壳
 
 ## 解决方案结构
 
 - `TileWorld.Engine`
-  - 引擎核心：世界数据、运行时、渲染抽象、存储、诊断、输入抽象。
+  - 引擎核心：世界数据、运行时、内容注册、渲染抽象、存储、诊断、输入抽象。
 - `TileWorld.Engine.Hosting.MonoGame`
   - MonoGame 兼容宿主，负责生命周期和渲染提交。
   - 当前这是唯一直接引用 MonoGame 的项目。
 - `TileWorld.Testing.Desktop`
-  - 基于 `IEngineApplication` 的桌面测试应用。
+  - 基于引擎宿主抽象的 Desktop 沙盒应用。
   - 它本身不直接引用 MonoGame。
 - `TileWorld.Engine.Tests`
-  - 引擎行为测试与架构护栏测试。
+  - 用于验证引擎行为、持久化、生成逻辑和架构护栏的自动化测试。
 
 ## 运行时结构
 
-推荐的层次关系如下：
+推荐层次关系如下：
 
 ```mermaid
 flowchart LR
     A["游戏 / 工具应用"] --> B["IEngineApplication"]
-    B --> C["WorldRuntime"]
-    C --> D["World Data + Services"]
-    C --> E["WorldRenderer"]
-    C --> F["WorldStorage / ChunkManager"]
-    G["MonoGame Compatibility Host"] --> B
+    B --> C["SceneHostApplication"]
+    C --> D["WorldRuntime"]
+    D --> E["World Data + Services"]
+    D --> F["WorldRenderer"]
+    D --> G["WorldStorage / ChunkManager"]
+    H["MonoGame Compatibility Host"] --> B
 ```
 
 这意味着：
 
-- 外部游戏代码应主要与 `WorldRuntime` 交互；
-- 宿主相关的生命周期代码应放在兼容层；
-- 底层运行时基础设施不应成为外部代码的默认依赖目标。
+- 外部游戏代码应优先通过 `WorldRuntime` 与世界交互，
+- 宿主相关的生命周期代码应放在兼容层，
+- 底层运行时基础设施尽量保持内部可替换，不暴露给外部调用方。
 
 ## 渲染方案
 
-引擎核心不会直接提交 MonoGame 的绘制调用。
+引擎核心不会直接提交 MonoGame 绘制调用。
 
 当前路径是：
 
-1. `TileWorld.Engine` 生成与后端无关的绘制命令；
-2. `WorldRenderer` 维护并复用 Chunk 级渲染缓存；
-3. 宿主兼容层把这些命令转换成实际后端调用。
+1. `TileWorld.Engine` 生成后端无关的绘制命令，
+2. `WorldRenderer` 构建和维护 Chunk 级渲染缓存，
+3. 兼容宿主把这些命令转换成实际后端调用。
 
-这样做的好处是：玩法运行时与 MonoGame 类型解耦，后续替换渲染后端时也更容易迁移。
+这样可以让玩法运行时与 MonoGame 类型解耦，也让后续替换渲染后端更容易。
 
 ## 存储方案
 
-当前存档格式为：
+当前存档布局为：
 
-- `world.json`：保存世界元数据；
-- `chunks/{x}_{y}.chk`：保存二进制 Chunk 数据。
+- `world.json`：世界元数据
+- `chunks/{x}_{y}.chk`：二进制 Chunk 数据
+- `playerdata/players.json`：玩家持久化状态
+- `entities/entities.bin`：非玩家运行时实体持久化状态
 
 当前运行时已经支持：
 
-- 手动保存；
-- 关闭时保存；
-- 固定周期自动保存；
-- 编辑后静置一段时间的自动保存。
+- 手动保存，
+- 关闭时保存，
+- 固定周期自动保存，
+- 编辑后静置触发的自动保存。
 
-目标是尽量降低异常退出导致世界数据全部丢失的风险，同时保持存储行为清晰、可控。
+另外，生成出来并首次访问的 Chunk 会立即标记为 `SaveDirty`，确保玩家访问过的世界区域会变成稳定世界状态，而不是每次都重新生成。
 
-## Desktop 测试应用
+## Desktop 沙盒
 
-`TileWorld.Testing.Desktop` 是当前阶段的人工验证壳。
+`TileWorld.Testing.Desktop` 是当前阶段的人工作验壳。
 
-操作方式：
+它现在具备：
 
-- 鼠标左键：放置当前选中 Tile
-- 鼠标右键：破坏 Tile
-- `1 / 2 / 3`：切换当前 Tile
-- `F1`：开关调试覆盖层
-- `F5`：手动保存
-- `WASD` 或方向键：移动相机
-- `Shift`：相机加速
-
-调试覆盖层会显示：
-
-- 可见 Chunk 边界；
-- 需要保存的 Chunk 标记；
-- 鼠标悬停 Tile 高亮；
-- Tile / Chunk / Local 坐标；
-- Tile ID、Variant、Flags、DirtyFlags；
-- 当前选中 Tile、相机位置、持久化状态。
+- 存档选择，
+- 新建世界流程，
+- 基于生成器的新世界启动，
+- Tile / Wall / Object 编辑，
+- 玩家移动与掉落拾取，
+- 暂停蒙层与“继续游戏 / 返回菜单”流程，
+- 带 Chunk、Tile、对象、脏状态、Biome 信息的调试覆盖层。
 
 ## 构建、测试、运行
 
@@ -142,7 +137,7 @@ dotnet build TileWorldEngine.sln
 dotnet test TileWorldEngine.sln --no-build
 ```
 
-运行桌面测试应用：
+运行 Desktop 沙盒：
 
 ```powershell
 dotnet run --project TileWorld.Testing.Desktop
@@ -150,11 +145,11 @@ dotnet run --project TileWorld.Testing.Desktop
 
 ## 当前边界约束
 
-以下约束是当前架构设计中的重要前提：
+下面这些约束是当前架构设计里的重要前提：
 
-- `TileWorld.Engine` 不应暴露 MonoGame 类型；
-- `TileWorld.Testing.Desktop` 不应直接依赖 MonoGame；
-- MonoGame 生命周期 ownership 当前集中在 `TileWorld.Engine.Hosting.MonoGame`；
+- `TileWorld.Engine` 不暴露 MonoGame 类型。
+- `TileWorld.Testing.Desktop` 不直接依赖 MonoGame。
+- MonoGame 的生命周期 ownership 当前集中在 `TileWorld.Engine.Hosting.MonoGame`。
 - 外部调用方应优先使用 `WorldRuntime`，而不是直接依赖底层运行时基础设施。
 
-这样可以保证项目继续朝长期目标演进：由引擎自身负责游戏生命周期，而图形 / 输入后端仅作为可替换的适配层存在。
+这样可以保证项目继续朝长期目标演进：由引擎自身负责游戏生命周期，而图形 / 输入后端只是可替换的宿主适配层。

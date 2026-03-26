@@ -114,6 +114,8 @@ public sealed class WorldCatalog
             WorldId = Guid.NewGuid().ToString("N"),
             Name = name,
             Seed = options.Seed ?? Random.Shared.Next(int.MinValue, int.MaxValue),
+            GeneratorId = string.IsNullOrWhiteSpace(options.GeneratorId) ? "overworld_v1" : options.GeneratorId,
+            GeneratorVersion = 1,
             SpawnTile = options.SpawnTile
         };
 

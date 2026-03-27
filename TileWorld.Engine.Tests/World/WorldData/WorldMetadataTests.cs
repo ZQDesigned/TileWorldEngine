@@ -15,7 +15,7 @@ public sealed class WorldMetadataTests
         Assert.Equal(0, metadata.Seed);
         Assert.Equal(2, metadata.WorldFormatVersion);
         Assert.Equal(2, metadata.ChunkFormatVersion);
-        Assert.Equal("overworld_v1", metadata.GeneratorId);
+        Assert.Equal("overworld", metadata.GeneratorId);
         Assert.Equal(1, metadata.GeneratorVersion);
         Assert.Equal(0L, metadata.WorldTime);
         Assert.Equal(WorldBoundsMode.LargeFinite, metadata.BoundsMode);
@@ -36,7 +36,7 @@ public sealed class WorldMetadataTests
             Seed = 42,
             WorldFormatVersion = 3,
             ChunkFormatVersion = 2,
-            GeneratorId = "flat_debug_v1",
+            GeneratorId = "flat_debug",
             GeneratorVersion = 7,
             WorldTime = 99,
             BoundsMode = WorldBoundsMode.SemiInfinite,
@@ -52,7 +52,7 @@ public sealed class WorldMetadataTests
         Assert.Equal(42, metadata.Seed);
         Assert.Equal(3, metadata.WorldFormatVersion);
         Assert.Equal(2, metadata.ChunkFormatVersion);
-        Assert.Equal("flat_debug_v1", metadata.GeneratorId);
+        Assert.Equal("flat_debug", metadata.GeneratorId);
         Assert.Equal(7, metadata.GeneratorVersion);
         Assert.Equal(99L, metadata.WorldTime);
         Assert.Equal(WorldBoundsMode.SemiInfinite, metadata.BoundsMode);

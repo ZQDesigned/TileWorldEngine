@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using TileWorld.Engine.Core.Diagnostics;
 using TileWorld.Engine.World;
+using TileWorld.Engine.World.Generation;
 
 namespace TileWorld.Engine.Storage;
 
@@ -121,7 +122,7 @@ public sealed class WorldCatalog
             WorldId = Guid.NewGuid().ToString("N"),
             Name = name,
             Seed = options.Seed ?? Random.Shared.Next(int.MinValue, int.MaxValue),
-            GeneratorId = string.IsNullOrWhiteSpace(options.GeneratorId) ? "overworld_v1" : options.GeneratorId,
+            GeneratorId = WorldGeneratorIdNormalizer.Normalize(options.GeneratorId),
             GeneratorVersion = 1,
             SpawnTile = options.SpawnTile,
             MinTileY = options.MinTileY,

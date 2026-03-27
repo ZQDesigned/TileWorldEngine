@@ -8,7 +8,7 @@ namespace TileWorld.Engine.World.Generation;
 
 internal sealed class FlatDebugWorldGenerator : IWorldGenerator
 {
-    public string GeneratorId => "flat_debug_v1";
+    public string GeneratorId => WorldGeneratorIdNormalizer.FlatDebug;
 
     public int GeneratorVersion => 1;
 

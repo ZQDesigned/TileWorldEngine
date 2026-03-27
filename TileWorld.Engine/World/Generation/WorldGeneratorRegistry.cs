@@ -32,12 +32,12 @@ internal sealed class WorldGeneratorRegistry
 
     internal IWorldGenerator ResolveOrDefault(string generatorId)
     {
-        if (!string.IsNullOrWhiteSpace(generatorId) &&
-            _generators.TryGetValue(generatorId, out var generator))
+        var normalizedGeneratorId = WorldGeneratorIdNormalizer.Normalize(generatorId);
+        if (_generators.TryGetValue(normalizedGeneratorId, out var generator))
         {
             return generator;
         }
 
-        return _generators["overworld_v1"];
+        return _generators[WorldGeneratorIdNormalizer.Overworld];
     }
 }

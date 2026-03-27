@@ -14,7 +14,7 @@ internal sealed class OverworldWorldGenerator : IWorldGenerator
     private const int SpawnFlatHalfWidth = 18;
     private const int SpawnProtectedHalfWidth = 26;
 
-    public string GeneratorId => "overworld_v1";
+    public string GeneratorId => WorldGeneratorIdNormalizer.Overworld;
 
     public int GeneratorVersion => 1;
 

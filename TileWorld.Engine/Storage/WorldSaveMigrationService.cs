@@ -1,5 +1,6 @@
 using System;
 using TileWorld.Engine.World;
+using TileWorld.Engine.World.Generation;
 using TileWorld.Engine.World.Coordinates;
 
 namespace TileWorld.Engine.Storage;
@@ -12,6 +13,7 @@ internal sealed class WorldSaveMigrationService
     internal WorldMetadata MigrateMetadata(WorldMetadata metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);
+        var normalizedGeneratorId = WorldGeneratorIdNormalizer.Normalize(metadata.GeneratorId);
 
         if (metadata.WorldFormatVersion <= 1 &&
             string.IsNullOrWhiteSpace(metadata.GeneratorId))
@@ -19,18 +21,19 @@ internal sealed class WorldSaveMigrationService
             return CloneMetadata(
                 metadata,
                 worldFormatVersion: 2,
-                generatorId: "legacy_flat_v1",
+                generatorId: WorldGeneratorIdNormalizer.LegacyFlat,
                 generatorVersion: 1);
         }
 
         if (metadata.WorldFormatVersion < 2 ||
             string.IsNullOrWhiteSpace(metadata.GeneratorId) ||
-            metadata.GeneratorVersion <= 0)
+            metadata.GeneratorVersion <= 0 ||
+            !string.Equals(metadata.GeneratorId, normalizedGeneratorId, StringComparison.Ordinal))
         {
             return CloneMetadata(
                 metadata,
                 worldFormatVersion: Math.Max(2, metadata.WorldFormatVersion),
-                generatorId: string.IsNullOrWhiteSpace(metadata.GeneratorId) ? "overworld_v1" : metadata.GeneratorId,
+                generatorId: normalizedGeneratorId,
                 generatorVersion: metadata.GeneratorVersion > 0 ? metadata.GeneratorVersion : 1);
         }
 

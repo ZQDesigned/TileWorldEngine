@@ -1,4 +1,5 @@
 using TileWorld.Engine.Core.Math;
+using TileWorld.Engine.World.Generation;
 
 namespace TileWorld.Engine.World;
 
@@ -35,7 +36,7 @@ public sealed class WorldMetadata
     /// <summary>
     /// Gets the generator identifier associated with this world's terrain layout.
     /// </summary>
-    public string GeneratorId { get; init; } = "overworld_v1";
+    public string GeneratorId { get; init; } = WorldGeneratorIdNormalizer.Overworld;
 
     /// <summary>
     /// Gets the version number of the generator implementation associated with this world.

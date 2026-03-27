@@ -151,7 +151,36 @@ public sealed class WorldStorageTests
         var metadata = new WorldStorage().LoadMetadata(directory.Path);
 
         Assert.Equal(2, metadata.WorldFormatVersion);
-        Assert.Equal("legacy_flat_v1", metadata.GeneratorId);
+        Assert.Equal("legacy_flat", metadata.GeneratorId);
+        Assert.Equal(1, metadata.GeneratorVersion);
+    }
+
+    [Fact]
+    public void LoadMetadata_NormalizesLegacyGeneratorAliases()
+    {
+        using var directory = new TestDirectoryScope();
+        File.WriteAllText(
+            Path.Combine(directory.Path, "world.json"),
+            """
+            {
+              "worldId": "legacy-alias-world",
+              "name": "Legacy Alias World",
+              "seed": 42,
+              "worldFormatVersion": 2,
+              "chunkFormatVersion": 2,
+              "generatorId": "overworld_v1",
+              "generatorVersion": 1,
+              "worldTime": 12,
+              "boundsMode": 0,
+              "spawnTile": { "x": 4, "y": 18 },
+              "chunkWidth": 32,
+              "chunkHeight": 32
+            }
+            """);
+
+        var metadata = new WorldStorage().LoadMetadata(directory.Path);
+
+        Assert.Equal("overworld", metadata.GeneratorId);
         Assert.Equal(1, metadata.GeneratorVersion);
     }
 }

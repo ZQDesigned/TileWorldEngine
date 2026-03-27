@@ -1,4 +1,5 @@
 using TileWorld.Engine.Core.Math;
+using TileWorld.Engine.World.Generation;
 
 namespace TileWorld.Engine.Storage;
 
@@ -25,7 +26,7 @@ public sealed class WorldCreationOptions
     /// <summary>
     /// Gets the generator identifier that should be used for the new world.
     /// </summary>
-    public string GeneratorId { get; init; } = "overworld_v1";
+    public string GeneratorId { get; init; } = WorldGeneratorIdNormalizer.Overworld;
 
     /// <summary>
     /// Gets the optional inclusive minimum tile Y coordinate allowed by the created world.

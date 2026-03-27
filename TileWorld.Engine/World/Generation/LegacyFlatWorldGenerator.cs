@@ -6,7 +6,7 @@ namespace TileWorld.Engine.World.Generation;
 
 internal sealed class LegacyFlatWorldGenerator : IWorldGenerator
 {
-    public string GeneratorId => "legacy_flat_v1";
+    public string GeneratorId => WorldGeneratorIdNormalizer.LegacyFlat;
 
     public int GeneratorVersion => 1;
 

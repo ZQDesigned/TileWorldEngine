@@ -34,6 +34,7 @@ internal sealed class LightingSystem
     private readonly IWorldGenerator _worldGenerator;
     private readonly Dictionary<int, DynamicLightState> _dynamicLightStates = new();
     private readonly Dictionary<ChunkCoord, ChunkLightBuffer> _lightBuffers = new();
+    private readonly Dictionary<ushort, TileLightingProperties> _tileLightingPropertiesCache = new();
     private readonly WorldData _worldData;
 
     /// <summary>
@@ -165,6 +166,24 @@ internal sealed class LightingSystem
     }
 
     /// <summary>
+    /// Attempts to resolve or rebuild the light buffer for a loaded chunk.
+    /// </summary>
+    /// <param name="coord">The chunk coordinate to inspect.</param>
+    /// <param name="lightBuffer">The resolved chunk light buffer when available.</param>
+    /// <returns><see langword="true"/> when a loaded chunk light buffer is available.</returns>
+    internal bool TryGetLightBuffer(ChunkCoord coord, out ChunkLightBuffer lightBuffer)
+    {
+        if (!_worldData.TryGetChunk(coord, out _))
+        {
+            lightBuffer = null!;
+            return false;
+        }
+
+        EnsureBufferForChunk(coord);
+        return _lightBuffers.TryGetValue(coord, out lightBuffer!);
+    }
+
+    /// <summary>
     /// Removes cached lighting for an unloaded chunk.
     /// </summary>
     /// <param name="coord">The unloaded chunk coordinate.</param>
@@ -260,6 +279,7 @@ internal sealed class LightingSystem
         var blockingMask = new bool[windowWidth * windowHeight];
         var emissiveLevels = new byte[windowWidth * windowHeight];
         var propagationQueue = new Queue<(int X, int Y)>();
+        var windowChunks = LoadWindowChunks(minChunkX, minChunkY);
         var generationContext = new WorldGenerationContext
         {
             Metadata = _worldData.Metadata,
@@ -271,10 +291,16 @@ internal sealed class LightingSystem
             var worldY = windowOriginY + localY;
             for (var localX = 0; localX < windowWidth; localX++)
             {
-                var worldX = windowOriginX + localX;
-                var worldCoord = new WorldTileCoord(worldX, worldY);
-                blockingMask[ToWindowIndex(localX, localY, windowWidth)] = _queryService.BlocksLight(worldCoord);
-                emissiveLevels[ToWindowIndex(localX, localY, windowWidth)] = GetTileEmissiveLight(worldCoord);
+                if (!WorldVerticalBoundsUtility.IsTileYWithinBounds(_worldData.Metadata, worldY))
+                {
+                    continue;
+                }
+
+                var cell = GetWindowCell(windowChunks, localX, localY);
+                var lightingProperties = ResolveTileLightingProperties(cell.ForegroundTileId);
+                var windowIndex = ToWindowIndex(localX, localY, windowWidth);
+                blockingMask[windowIndex] = lightingProperties.BlocksLight;
+                emissiveLevels[windowIndex] = lightingProperties.EmissiveLight;
             }
         }
 
@@ -317,29 +343,60 @@ internal sealed class LightingSystem
         byte[] lightLevels,
         Queue<(int X, int Y)> propagationQueue)
     {
+        var boundedMinTileY = _worldData.Metadata.MinTileY;
+        var windowBottomY = windowOriginY + windowHeight - 1;
+
         for (var localX = 0; localX < windowWidth; localX++)
         {
             var worldX = windowOriginX + localX;
             var surfaceY = ResolveSkySurfaceY(generationContext, worldX);
+            var firstSkyWorldY = Math.Max(windowOriginY, boundedMinTileY ?? windowOriginY);
+            var lastOpenSkyWorldY = Math.Min(surfaceY, windowBottomY);
 
-            for (var localY = 0; localY < windowHeight; localY++)
+            for (var worldY = firstSkyWorldY; worldY <= lastOpenSkyWorldY; worldY++)
             {
-                var worldY = windowOriginY + localY;
-                var directSkyLight = ResolveDirectSkyLightLevel(
-                    worldX,
-                    surfaceY,
-                    worldY,
-                    localX,
-                    windowOriginY,
-                    windowWidth,
-                    blockingMask);
-                if (directSkyLight == 0)
+                lightLevels[ToWindowIndex(localX, worldY - windowOriginY, windowWidth)] = MaxLightLevel;
+            }
+
+            var firstUndergroundWorldY = Math.Max(surfaceY + 1, windowOriginY);
+            var lastPotentiallyLitWorldY = Math.Min(surfaceY + (MaxLightLevel - 1), windowBottomY);
+            if (firstUndergroundWorldY > lastPotentiallyLitWorldY)
+            {
+                continue;
+            }
+
+            byte currentLightLevel = MaxLightLevel;
+
+            for (var scanWorldY = surfaceY + 1; scanWorldY < firstUndergroundWorldY; scanWorldY++)
+            {
+                currentLightLevel = ApplyAttenuation(
+                    currentLightLevel,
+                    ResolveBlocksLight(worldX, scanWorldY, localX, windowOriginY, windowWidth, blockingMask));
+
+                if (currentLightLevel == 0)
                 {
-                    continue;
+                    break;
+                }
+            }
+
+            if (currentLightLevel == 0)
+            {
+                continue;
+            }
+
+            for (var worldY = firstUndergroundWorldY; worldY <= lastPotentiallyLitWorldY; worldY++)
+            {
+                currentLightLevel = ApplyAttenuation(
+                    currentLightLevel,
+                    ResolveBlocksLight(worldX, worldY, localX, windowOriginY, windowWidth, blockingMask));
+
+                if (currentLightLevel == 0)
+                {
+                    break;
                 }
 
-                var windowIndex = ToWindowIndex(localX, localY, windowWidth);
-                lightLevels[windowIndex] = Max(lightLevels[windowIndex], directSkyLight);
+                var windowIndex = ToWindowIndex(localX, worldY - windowOriginY, windowWidth);
+                lightLevels[windowIndex] = Max(lightLevels[windowIndex], currentLightLevel);
             }
         }
     }
@@ -510,13 +567,6 @@ internal sealed class LightingSystem
         propagationQueue.Enqueue((localX, localY));
     }
 
-    private byte GetTileEmissiveLight(WorldTileCoord coord)
-    {
-        return _queryService.TryGetForegroundTileDef(coord, out var tileDef)
-            ? tileDef.EmissiveLight
-            : (byte)0;
-    }
-
     private int ResolveSkySurfaceY(WorldGenerationContext generationContext, int worldX)
     {
         var generatorSurfaceY = _worldGenerator.GetSurfaceHeight(generationContext, worldX);
@@ -526,41 +576,6 @@ internal sealed class LightingSystem
         }
 
         return generatorSurfaceY;
-    }
-
-    private byte ResolveDirectSkyLightLevel(
-        int worldX,
-        int surfaceY,
-        int worldY,
-        int localX,
-        int windowOriginY,
-        int windowWidth,
-        IReadOnlyList<bool> blockingMask)
-    {
-        if (worldY <= surfaceY)
-        {
-            return MaxLightLevel;
-        }
-
-        var depthBelowSurface = worldY - surfaceY;
-        if (depthBelowSurface > MaxLightLevel)
-        {
-            return 0;
-        }
-
-        byte currentLightLevel = MaxLightLevel;
-        for (var scanWorldY = surfaceY + 1; scanWorldY <= worldY; scanWorldY++)
-        {
-            currentLightLevel = ApplyAttenuation(
-                currentLightLevel,
-                ResolveBlocksLight(worldX, scanWorldY, localX, windowOriginY, windowWidth, blockingMask));
-            if (currentLightLevel == 0)
-            {
-                return 0;
-            }
-        }
-
-        return currentLightLevel;
     }
 
     private bool ResolveBlocksLight(
@@ -578,6 +593,59 @@ internal sealed class LightingSystem
         }
 
         return _queryService.BlocksLight(new WorldTileCoord(worldX, worldY));
+    }
+
+    private Chunk[] LoadWindowChunks(int minChunkX, int minChunkY)
+    {
+        var windowChunks = new Chunk[9];
+
+        for (var chunkOffsetY = 0; chunkOffsetY < 3; chunkOffsetY++)
+        {
+            for (var chunkOffsetX = 0; chunkOffsetX < 3; chunkOffsetX++)
+            {
+                var coord = new ChunkCoord(minChunkX + chunkOffsetX, minChunkY + chunkOffsetY);
+                _worldData.TryGetChunk(coord, out windowChunks[(chunkOffsetY * 3) + chunkOffsetX]);
+            }
+        }
+
+        return windowChunks;
+    }
+
+    private static TileWorld.Engine.World.Cells.TileCell GetWindowCell(Chunk[] windowChunks, int localX, int localY)
+    {
+        var chunkOffsetX = localX / ChunkDimensions.Width;
+        var chunkOffsetY = localY / ChunkDimensions.Height;
+        var localChunkX = localX % ChunkDimensions.Width;
+        var localChunkY = localY % ChunkDimensions.Height;
+        var chunk = windowChunks[(chunkOffsetY * 3) + chunkOffsetX];
+        return chunk is null
+            ? default
+            : chunk.GetCell(localChunkX, localChunkY);
+    }
+
+    private TileLightingProperties ResolveTileLightingProperties(ushort tileId)
+    {
+        if (tileId == 0)
+        {
+            return default;
+        }
+
+        if (_tileLightingPropertiesCache.TryGetValue(tileId, out var lightingProperties))
+        {
+            return lightingProperties;
+        }
+
+        if (_contentRegistry.TryGetTileDef(tileId, out var tileDef))
+        {
+            lightingProperties = new TileLightingProperties(tileDef.BlocksLight, tileDef.EmissiveLight);
+        }
+        else
+        {
+            lightingProperties = default;
+        }
+
+        _tileLightingPropertiesCache[tileId] = lightingProperties;
+        return lightingProperties;
     }
 
     private static byte ApplyAttenuation(byte lightLevel, bool passesThroughBlockingCell)
@@ -610,4 +678,5 @@ internal sealed class LightingSystem
     }
 
     private readonly record struct DynamicLightState(WorldTileCoord Coord, byte LightLevel);
+    private readonly record struct TileLightingProperties(bool BlocksLight, byte EmissiveLight);
 }

@@ -6,6 +6,7 @@ using TileWorld.Engine.Core.Diagnostics;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Runtime;
 using TileWorld.Engine.Runtime.Entities;
+using TileWorld.Engine.Runtime.Lighting;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
 using TileWorld.Engine.World.Objects;
@@ -103,7 +104,9 @@ public sealed class WorldRenderer
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(renderContext);
 
-        foreach (var coord in GetVisibleChunkCoords())
+        var visibleChunkCoords = GetVisibleChunkCoords().ToArray();
+
+        foreach (var coord in visibleChunkCoords)
         {
             if (!runtime.WorldData.TryGetChunk(coord, out _) ||
                 !_chunkRenderCaches.TryGetValue(coord, out var cache) ||
@@ -112,18 +115,20 @@ public sealed class WorldRenderer
                 continue;
             }
 
+            runtime.LightingSystem.TryGetLightBuffer(coord, out var lightBuffer);
+
             foreach (var command in cache.BackgroundCommands)
             {
-                renderContext.DrawSprite(ToScreenSpace(ApplyTileLighting(runtime, command)));
+                renderContext.DrawSprite(ToScreenSpace(ApplyChunkLighting(command, cache, lightBuffer)));
             }
 
             foreach (var command in cache.ForegroundCommands)
             {
-                renderContext.DrawSprite(ToScreenSpace(ApplyTileLighting(runtime, command)));
+                renderContext.DrawSprite(ToScreenSpace(ApplyChunkLighting(command, cache, lightBuffer)));
             }
         }
 
-        foreach (var command in BuildVisibleObjectCommands(runtime))
+        foreach (var command in BuildVisibleObjectCommands(runtime, visibleChunkCoords))
         {
             renderContext.DrawSprite(command);
         }
@@ -178,11 +183,11 @@ public sealed class WorldRenderer
         };
     }
 
-    private IEnumerable<SpriteDrawCommand> BuildVisibleObjectCommands(WorldRuntime runtime)
+    private IEnumerable<SpriteDrawCommand> BuildVisibleObjectCommands(WorldRuntime runtime, IEnumerable<ChunkCoord> visibleChunkCoords)
     {
         var renderedObjectIds = new HashSet<int>();
 
-        foreach (var chunkCoord in GetVisibleChunkCoords())
+        foreach (var chunkCoord in visibleChunkCoords)
         {
             foreach (var instance in runtime.ObjectManager.QueryObjectsInChunk(chunkCoord))
             {
@@ -296,13 +301,25 @@ public sealed class WorldRenderer
         return quotient;
     }
 
-    private SpriteDrawCommand ApplyTileLighting(WorldRuntime runtime, SpriteDrawCommand command)
+    private SpriteDrawCommand ApplyChunkLighting(
+        SpriteDrawCommand command,
+        ChunkRenderCache cache,
+        ChunkLightBuffer lightBuffer)
     {
-        var tileCoord = new WorldTileCoord(
-            FloorDivide(command.DestinationRectPixels.X, _settings.TileSizePixels),
-            FloorDivide(command.DestinationRectPixels.Y, _settings.TileSizePixels));
+        if (lightBuffer is null)
+        {
+            return ApplyLightLevel(command, 0);
+        }
 
-        return ApplyLightLevel(command, runtime.GetLightLevel(tileCoord));
+        var localX = (command.DestinationRectPixels.X - cache.WorldPixelBounds.X) / _settings.TileSizePixels;
+        var localY = (command.DestinationRectPixels.Y - cache.WorldPixelBounds.Y) / _settings.TileSizePixels;
+
+        if ((uint)localX >= ChunkDimensions.Width || (uint)localY >= ChunkDimensions.Height)
+        {
+            return ApplyLightLevel(command, 0);
+        }
+
+        return ApplyLightLevel(command, lightBuffer.GetLightLevel(localX, localY));
     }
 
     private SpriteDrawCommand ApplyRectCenterLighting(SpriteDrawCommand command, WorldRuntime runtime)

@@ -27,6 +27,14 @@ public interface IWorldGenerator
     ChunkGenerationResult GenerateChunk(WorldGenerationContext context, ChunkCoord coord);
 
     /// <summary>
+    /// Resolves the approximate terrain surface height at a world X coordinate.
+    /// </summary>
+    /// <param name="context">The generation context for the current world.</param>
+    /// <param name="worldX">The world X coordinate to inspect.</param>
+    /// <returns>The terrain surface tile Y coordinate used by this generator.</returns>
+    int GetSurfaceHeight(WorldGenerationContext context, int worldX);
+
+    /// <summary>
     /// Resolves the biome identifier at a world-tile coordinate.
     /// </summary>
     /// <param name="context">The generation context for the current world.</param>

@@ -37,6 +37,19 @@ internal sealed class DirtyTracker
     }
 
     /// <summary>
+    /// Applies dirty flags to a chunk when it is already loaded.
+    /// </summary>
+    /// <param name="coord">The loaded chunk coordinate to mark.</param>
+    /// <param name="flags">The dirty flags to apply.</param>
+    public void MarkLoadedDirty(ChunkCoord coord, ChunkDirtyFlags flags)
+    {
+        if (_worldData.TryGetChunk(coord, out var chunk))
+        {
+            chunk.DirtyFlags |= flags;
+        }
+    }
+
+    /// <summary>
     /// Marks a chunk as needing its render cache rebuilt.
     /// </summary>
     /// <param name="coord">The chunk coordinate to mark.</param>
@@ -141,6 +154,28 @@ internal sealed class DirtyTracker
         if (_worldData.TryGetChunk(coord, out var chunk))
         {
             chunk.DirtyFlags &= ~flags;
+        }
+    }
+
+    /// <summary>
+    /// Applies dirty flags to the surrounding loaded chunks in a 3x3 ring around a chunk.
+    /// </summary>
+    /// <param name="coord">The center chunk coordinate.</param>
+    /// <param name="flags">The dirty flags to apply.</param>
+    /// <param name="includeCenter">Whether the center chunk should also be marked.</param>
+    public void MarkSurroundingLoadedDirty(ChunkCoord coord, ChunkDirtyFlags flags, bool includeCenter = true)
+    {
+        for (var offsetY = -1; offsetY <= 1; offsetY++)
+        {
+            for (var offsetX = -1; offsetX <= 1; offsetX++)
+            {
+                if (!includeCenter && offsetX == 0 && offsetY == 0)
+                {
+                    continue;
+                }
+
+                MarkLoadedDirty(coord.Offset(offsetX, offsetY), flags);
+            }
         }
     }
 

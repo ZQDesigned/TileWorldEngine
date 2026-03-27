@@ -9,7 +9,7 @@ The project has already moved beyond its initial bootstrap milestone. The curren
 - the chunk-first runtime core,
 - object and entity gameplay foundations,
 - Desktop sandbox flows,
-- the first slice of phase 4: procedural world generation, biome queries, chunk source tracking, and chunk streaming foundations.
+- the first slice of phase 4: procedural world generation, biome queries, chunk source tracking, chunk streaming foundations, and runtime lighting.
 
 ## Start Here
 
@@ -31,6 +31,6 @@ The current documentation covers:
 - the chunk-first tile-world architecture,
 - the stable gameplay-facing runtime facade,
 - the MonoGame compatibility host boundary,
-- persistence, generation, and streaming foundations,
+- persistence, generation, streaming, and lighting foundations,
 - local development and Desktop sandbox usage,
 - the GitHub Pages publishing workflow.

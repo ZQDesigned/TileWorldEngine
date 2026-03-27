@@ -181,6 +181,7 @@ internal sealed class SandboxWorldScene : IEngineScene
         UpdateToolSelection(input);
         UpdateDebugOverlayToggle(input);
         UpdatePlayerControl(input);
+        UpdatePlayerLightSource();
         _worldRuntime.Update(frameTime);
         UpdateCameraFromPlayer();
         UpdateManualSave(input);
@@ -395,6 +396,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             SizeInTiles = new Int2(1, 3),
             RequiresSupport = true,
             BreakDropItemId = LampItemId,
+            EmissiveLight = 14,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(255, 227, 117), false)
         });
     }
@@ -581,6 +583,11 @@ internal sealed class SandboxWorldScene : IEngineScene
         _worldRuntime.SetPlayerInput(_playerEntityId, moveAxis, jumpRequested);
     }
 
+    private void UpdatePlayerLightSource()
+    {
+        _worldRuntime.SetPlayerHeldLightLevel(_playerEntityId, ResolveHeldLightLevel());
+    }
+
     private void UpdateCameraFromPlayer()
     {
         if (!_worldRuntime.TryGetEntity(_playerEntityId, out var player))
@@ -711,6 +718,16 @@ internal sealed class SandboxWorldScene : IEngineScene
         return _toolMode == ToolMode.Tile
             ? _tilePalette[_selectedPaletteIndex]
             : (ushort)0;
+    }
+
+    private byte ResolveHeldLightLevel()
+    {
+        return _toolMode switch
+        {
+            ToolMode.Tile when _contentRegistry.TryGetTileDef(_tilePalette[_selectedPaletteIndex], out var tileDef) => tileDef.EmissiveLight,
+            ToolMode.Object when _contentRegistry.TryGetObjectDef(_objectPalette[_selectedPaletteIndex], out var objectDef) => objectDef.EmissiveLight,
+            _ => 0
+        };
     }
 
     private void ActivatePauseButton(int buttonIndex)

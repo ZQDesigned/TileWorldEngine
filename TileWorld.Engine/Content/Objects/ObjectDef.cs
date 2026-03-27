@@ -44,6 +44,11 @@ public sealed class ObjectDef
     public int BreakDropItemId { get; init; }
 
     /// <summary>
+    /// Gets the single-channel emissive light level emitted by this object in the range <c>0..15</c>.
+    /// </summary>
+    public byte EmissiveLight { get; init; }
+
+    /// <summary>
     /// Gets the visual metadata used by render backends to draw this object.
     /// </summary>
     public TileVisualDef Visual { get; init; } = TileVisualDef.Default;

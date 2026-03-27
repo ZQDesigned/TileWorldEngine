@@ -12,6 +12,7 @@ using TileWorld.Engine.Runtime.Contexts;
 using TileWorld.Engine.Runtime.Edits;
 using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.Runtime.Events;
+using TileWorld.Engine.Runtime.Lighting;
 using TileWorld.Engine.Runtime.Objects;
 using TileWorld.Engine.Runtime.Queries;
 using TileWorld.Engine.Runtime.Support;
@@ -34,6 +35,7 @@ namespace TileWorld.Engine.Runtime;
 /// </remarks>
 public sealed class WorldRuntime
 {
+    private const int MaxLightChunkRebuildsPerFrame = 4;
     private bool _isInitialized;
     private readonly IWorldGenerator _worldGenerator;
     private readonly WorldGeneratorRegistry _worldGeneratorRegistry;
@@ -81,8 +83,12 @@ public sealed class WorldRuntime
         AutoTileSystem = new AutoTileSystem(worldData, QueryService);
         ObjectManager = new ObjectManager(contentRegistry, QueryService, DirtyTracker, EventBus, EntityManager);
         SupportSystem = new SupportSystem(ObjectManager, QueryService);
+        LightingSystem = new LightingSystem(worldData, contentRegistry, QueryService, DirtyTracker, ObjectManager, EntityManager, _worldGenerator);
+        ObjectManager.AttachLightingSystem(LightingSystem);
         QueryService.AttachObjectManager(ObjectManager);
         ChunkManager?.AttachObjectManager(ObjectManager);
+        EventBus.Subscribe<ChunkActivatedEvent>(evt => LightingSystem.MarkChunkDirty(evt.Coord));
+        EventBus.Subscribe<ChunkUnloadingEvent>(evt => LightingSystem.RemoveChunkBuffer(evt.Coord));
         TileEditService = new TileEditService(
             worldData,
             contentRegistry,
@@ -93,7 +99,8 @@ public sealed class WorldRuntime
             ObjectManager,
             SupportSystem,
             EntityManager,
-            ChunkManager);
+            ChunkManager,
+            LightingSystem);
     }
 
     /// <summary>
@@ -143,6 +150,8 @@ public sealed class WorldRuntime
 
     internal EntityManager EntityManager { get; }
 
+    internal LightingSystem LightingSystem { get; }
+
     /// <summary>
     /// Transitions the runtime into the initialized state.
     /// </summary>
@@ -154,6 +163,7 @@ public sealed class WorldRuntime
         }
 
         RestorePersistedEntitiesIfNeeded();
+        LightingSystem.MarkAllLoadedChunksDirty();
         _isInitialized = true;
     }
 
@@ -171,6 +181,8 @@ public sealed class WorldRuntime
         _lastObservedUpdateTime = frameTime.TotalTime;
         ChunkManager?.Update();
         EntityManager.Update(frameTime);
+        LightingSystem.SyncDynamicLightSources();
+        LightingSystem.RebuildDirtyLighting(GetLightingRebuildChunkSet(), MaxLightChunkRebuildsPerFrame);
         if (EntityManager.ConsumePersistenceMutationObserved())
         {
             _pendingMutationObserved = true;
@@ -421,6 +433,27 @@ public sealed class WorldRuntime
     }
 
     /// <summary>
+    /// Resolves the derived single-channel light level at a world-tile coordinate.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <returns>The light level in the range <c>0..15</c>.</returns>
+    public byte GetLightLevel(WorldTileCoord coord)
+    {
+        return LightingSystem.GetLightLevel(coord);
+    }
+
+    /// <summary>
+    /// Attempts to resolve the derived single-channel light level at a world-tile coordinate.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <param name="level">The resolved light level when available.</param>
+    /// <returns><see langword="true"/> when the containing chunk is available and a light value could be resolved.</returns>
+    public bool TryGetLightLevel(WorldTileCoord coord, out byte level)
+    {
+        return LightingSystem.TryGetLightLevel(coord, out level);
+    }
+
+    /// <summary>
     /// Evaluates whether an object placement would currently succeed.
     /// </summary>
     /// <param name="anchorCoord">The logical object anchor coordinate.</param>
@@ -535,6 +568,29 @@ public sealed class WorldRuntime
     public bool TryGetEntity(int entityId, out Entity entity)
     {
         return EntityManager.TryGetEntity(entityId, out entity);
+    }
+
+    /// <summary>
+    /// Sets the held-light contribution for a player-controlled entity.
+    /// </summary>
+    /// <param name="entityId">The target player entity identifier.</param>
+    /// <param name="lightLevel">The held-light level in the range <c>0..15</c>.</param>
+    public void SetPlayerHeldLightLevel(int entityId, byte lightLevel)
+    {
+        if (!EntityManager.TryGetEntity(entityId, out var entity) || entity.Type != EntityType.Player)
+        {
+            return;
+        }
+
+        if (!EntityManager.SetEntityEmissiveLight(entityId, lightLevel))
+        {
+            return;
+        }
+
+        var bounds = entity.WorldBounds;
+        LightingSystem.MarkDirty(new WorldTileCoord(
+            (int)MathF.Floor(bounds.Left + (bounds.Width / 2f)),
+            (int)MathF.Floor(bounds.Top + (bounds.Height / 2f))));
     }
 
     /// <summary>
@@ -734,5 +790,13 @@ public sealed class WorldRuntime
     private int GetPersistedEntityCount()
     {
         return EntityManager.GetPersistedPlayers().Count + EntityManager.GetPersistedRuntimeEntities().Count;
+    }
+
+    private IEnumerable<ChunkCoord> GetLightingRebuildChunkSet()
+    {
+        var activeChunks = GetActiveChunks().ToArray();
+        return activeChunks.Length > 0
+            ? activeChunks
+            : WorldData.EnumerateLoadedChunks().Select(static chunk => chunk.Coord);
     }
 }

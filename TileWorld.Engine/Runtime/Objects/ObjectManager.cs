@@ -8,6 +8,7 @@ using TileWorld.Engine.Runtime.Chunks;
 using TileWorld.Engine.Runtime.Contexts;
 using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.Runtime.Events;
+using TileWorld.Engine.Runtime.Lighting;
 using TileWorld.Engine.Runtime.Queries;
 using TileWorld.Engine.Runtime.Tracking;
 using TileWorld.Engine.World;
@@ -34,6 +35,7 @@ internal sealed class ObjectManager
     private readonly Dictionary<ChunkCoord, HashSet<int>> _instancesByChunk = new();
     private readonly Dictionary<ChunkCoord, int[]> _occupancyByChunk = new();
     private readonly WorldQueryService _worldQueryService;
+    private LightingSystem _lightingSystem;
     private int _nextInstanceId = 1;
 
     /// <summary>
@@ -58,6 +60,11 @@ internal sealed class ObjectManager
         return _instancesByChunk.TryGetValue(coord, out var instanceIds)
             ? instanceIds.Select(id => _instances[id])
             : [];
+    }
+
+    public void AttachLightingSystem(LightingSystem lightingSystem)
+    {
+        _lightingSystem = lightingSystem;
     }
 
     public bool TryGetObject(int objectInstanceId, out ObjectInstance instance)
@@ -333,12 +340,27 @@ internal sealed class ObjectManager
             affectedChunks.Add(WorldCoordinateConverter.ToChunkCoord(coord));
         }
 
-        foreach (var chunkCoord in affectedChunks)
+        var dirtyFlags = ChunkDirtyFlags.RenderDirty | ChunkDirtyFlags.SaveDirty;
+        if (objectDef.EmissiveLight > 0)
         {
-            _dirtyTracker.MarkDirty(chunkCoord, ChunkDirtyFlags.RenderDirty | ChunkDirtyFlags.SaveDirty);
+            dirtyFlags |= ChunkDirtyFlags.LightDirty;
         }
 
-        return ChunkDirtyFlags.RenderDirty | ChunkDirtyFlags.SaveDirty;
+        foreach (var chunkCoord in affectedChunks)
+        {
+            _dirtyTracker.MarkDirty(chunkCoord, dirtyFlags);
+            if (objectDef.EmissiveLight > 0)
+            {
+                _dirtyTracker.MarkSurroundingLoadedDirty(chunkCoord, ChunkDirtyFlags.LightDirty, includeCenter: false);
+            }
+        }
+
+        if (objectDef.EmissiveLight > 0)
+        {
+            _lightingSystem?.MarkDirty(instance.AnchorCoord);
+        }
+
+        return dirtyFlags;
     }
 
     private IEnumerable<WorldTileCoord> EnumerateFootprint(WorldTileCoord anchorCoord, ObjectDef objectDef)

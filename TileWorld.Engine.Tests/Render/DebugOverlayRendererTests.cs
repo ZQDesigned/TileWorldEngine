@@ -47,6 +47,7 @@ public sealed class DebugOverlayRendererTests
         Assert.Equal(new ChunkCoord(0, 0), frame.HoveredChunkCoord);
         Assert.Equal(new Int2(0, 0), frame.HoveredLocalCoord);
         Assert.Contains("TILE: 0,0", frame.PanelLines);
+        Assert.Contains(frame.PanelLines, line => line.StartsWith("LIGHT: ", StringComparison.Ordinal));
         Assert.Contains(frame.DrawCommands, command => command.LayerDepth == 0.81f && command.DestinationRectPixels == new RectI(2, 2, 12, 4));
         Assert.Contains(frame.DrawCommands, command => command.LayerDepth == 0.86f && command.DestinationRectPixels == new RectI(0, 0, 16, 16));
     }

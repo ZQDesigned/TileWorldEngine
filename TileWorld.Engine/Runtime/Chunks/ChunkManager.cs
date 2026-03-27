@@ -448,7 +448,7 @@ internal sealed class ChunkManager
         chunk.State = ChunkState.Loaded;
         if (resolvedChunk.Source != ChunkLoadSource.Memory)
         {
-            chunk.DirtyFlags |= ChunkDirtyFlags.RenderDirty;
+            chunk.DirtyFlags |= ChunkDirtyFlags.RenderDirty | ChunkDirtyFlags.LightDirty;
         }
 
         if (resolvedChunk.Source == ChunkLoadSource.Generated)

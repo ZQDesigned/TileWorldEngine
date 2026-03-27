@@ -43,6 +43,11 @@ public sealed class TileDef
     public int Hardness { get; init; }
 
     /// <summary>
+    /// Gets the single-channel emissive light level emitted by this tile in the range <c>0..15</c>.
+    /// </summary>
+    public byte EmissiveLight { get; init; }
+
+    /// <summary>
     /// Gets the item definition identifier spawned when the tile is broken. A value of <c>0</c> disables drops.
     /// </summary>
     public int BreakDropItemId { get; init; }

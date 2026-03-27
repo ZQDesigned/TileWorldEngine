@@ -1,6 +1,7 @@
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Content.Tiles;
 using TileWorld.Engine.Core.Math;
+using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Render;
 using TileWorld.Engine.Runtime;
 using TileWorld.Engine.Runtime.Contexts;
@@ -137,6 +138,35 @@ public sealed class WorldRendererTests
         Assert.False(renderer.TryGetChunkRenderCache(new ChunkCoord(10, 0), out _));
         Assert.False(runtime.DirtyTracker.HasDirty(new ChunkCoord(0, 0), ChunkDirtyFlags.RenderDirty));
         Assert.True(runtime.DirtyTracker.HasDirty(new ChunkCoord(10, 0), ChunkDirtyFlags.RenderDirty));
+    }
+
+    [Fact]
+    public void Draw_AppliesLightingTintForUndergroundTiles()
+    {
+        var runtime = CreateRuntime();
+        var camera = new Camera2D(Int2.Zero, new Int2(512, 512));
+        var renderer = CreateRenderer(camera, runtime.ContentRegistry);
+        var renderContext = new FakeRenderContext(camera.ViewportSizePixels);
+
+        runtime.Initialize();
+        runtime.EnsureChunkLoaded(new ChunkCoord(0, 0));
+        runtime.SetForegroundTile(new WorldTileCoord(1, 5), 1);
+        for (var x = 0; x <= 2; x++)
+        {
+            runtime.SetForegroundTile(new WorldTileCoord(x, 3), 1);
+        }
+
+        runtime.SetForegroundTile(new WorldTileCoord(0, 4), 1);
+        runtime.SetForegroundTile(new WorldTileCoord(2, 4), 1);
+        runtime.Update(new FrameTime(TimeSpan.Zero, TimeSpan.FromSeconds(1d / 60d), false));
+
+        renderer.RebuildDirtyCaches(runtime);
+        renderer.Draw(runtime, renderContext);
+
+        var undergroundCommand = renderContext.DrawCalls.Single(command => command.DestinationRectPixels == new RectI(16, 80, 16, 16));
+        Assert.True(undergroundCommand.Tint.R < 130);
+        Assert.True(undergroundCommand.Tint.G < 130);
+        Assert.True(undergroundCommand.Tint.B < 130);
     }
 
     private static WorldRuntime CreateRuntime()

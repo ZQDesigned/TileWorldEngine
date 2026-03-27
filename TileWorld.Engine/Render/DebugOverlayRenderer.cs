@@ -85,6 +85,7 @@ public sealed class DebugOverlayRenderer
         var hoveredBiomeName = string.Empty;
         var hoveredDirtyFlags = ChunkDirtyFlags.None;
         var hoveredChunkLoaded = false;
+        var hoveredLightLevel = (byte)0;
         var hoveredObjectLine = string.Empty;
 
         AddVisibleChunkHighlights(commands, runtime, worldRenderer, camera);
@@ -98,6 +99,7 @@ public sealed class DebugOverlayRenderer
             hoveredBiomeName = runtime.TryGetBiomeDef(tileCoord, out var hoveredBiomeDef)
                 ? hoveredBiomeDef.Name.ToUpperInvariant()
                 : "UNKNOWN";
+            hoveredLightLevel = runtime.GetLightLevel(tileCoord);
             hoveredChunkLoaded = runtime.WorldData.TryGetChunk(hoveredChunkCoord.Value, out var hoveredChunk);
             hoveredDirtyFlags = hoveredChunkLoaded ? hoveredChunk.DirtyFlags : ChunkDirtyFlags.None;
             if (runtime.QueryService.TryGetObjectAt(tileCoord, out var hoveredObject) &&
@@ -122,6 +124,7 @@ public sealed class DebugOverlayRenderer
             hoveredBiomeName,
             hoveredDirtyFlags,
             hoveredChunkLoaded,
+            hoveredLightLevel,
             hoveredObjectLine);
 
         AddPanel(commands, panelLines);
@@ -222,6 +225,7 @@ public sealed class DebugOverlayRenderer
         string hoveredBiomeName,
         ChunkDirtyFlags hoveredDirtyFlags,
         bool hoveredChunkLoaded,
+        byte hoveredLightLevel,
         string hoveredObjectLine)
     {
         var effectiveSelectionLabel = !string.IsNullOrWhiteSpace(selectionLabel)
@@ -249,6 +253,7 @@ public sealed class DebugOverlayRenderer
         lines.Add($"CHUNK: {chunkCoord.X.ToString(CultureInfo.InvariantCulture)},{chunkCoord.Y.ToString(CultureInfo.InvariantCulture)}");
         lines.Add($"LOCAL: {localCoord.X.ToString(CultureInfo.InvariantCulture)},{localCoord.Y.ToString(CultureInfo.InvariantCulture)}");
         lines.Add($"BIOME: {hoveredBiomeId.ToString(CultureInfo.InvariantCulture)} {hoveredBiomeName}");
+        lines.Add($"LIGHT: {hoveredLightLevel.ToString(CultureInfo.InvariantCulture)}");
         lines.Add($"FG TILE: {hoveredCell.ForegroundTileId.ToString(CultureInfo.InvariantCulture)}");
         lines.Add(
             $"VARIANT: {hoveredCell.Variant.ToString(CultureInfo.InvariantCulture)} FLAGS: {hoveredCell.Flags.ToString(CultureInfo.InvariantCulture)}");

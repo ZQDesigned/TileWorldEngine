@@ -84,6 +84,14 @@ internal sealed class OverworldWorldGenerator : IWorldGenerator
         return new ChunkGenerationResult(chunk);
     }
 
+    public int GetSurfaceHeight(WorldGenerationContext context, int worldX)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var biomeId = GetBiomeId(context, new WorldTileCoord(worldX, context.Metadata.SpawnTile.Y));
+        return GetSurfaceHeight(context, worldX, biomeId);
+    }
+
     public int GetBiomeId(WorldGenerationContext context, WorldTileCoord coord)
     {
         ArgumentNullException.ThrowIfNull(context);

@@ -23,9 +23,11 @@ public sealed class EntityManager
     private const float PlayerGravityTilesPerSecondSquared = 28f;
     private const float DropGravityTilesPerSecondSquared = 24f;
     private const float DropGroundDamping = 0.8f;
+    private const byte DefaultPlayerLightLevel = 8;
     private readonly TileCollisionService _collisionService;
     private readonly ContentRegistry _contentRegistry;
     private readonly Dictionary<int, Entity> _entities = new();
+    private readonly Dictionary<int, byte> _entityLightLevels = new();
     private readonly WorldEventBus _eventBus;
     private readonly Dictionary<int, PlayerInputState> _playerInputStates = new();
     private bool _hasPendingPersistenceChanges;
@@ -122,6 +124,7 @@ public sealed class EntityManager
         ArgumentNullException.ThrowIfNull(runtimeEntities);
 
         _entities.Clear();
+        _entityLightLevels.Clear();
         _playerInputStates.Clear();
         _nextEntityId = 1;
 
@@ -214,10 +217,53 @@ public sealed class EntityManager
         {
             Type = EntityType.Drop,
             Position = position,
-            LocalBounds = new AabbF(0.15f, 0.15f, 0.7f, 0.7f),
+            LocalBounds = new AabbF(-0.35f, -0.35f, 0.7f, 0.7f),
             ItemDefId = itemDefId,
             Amount = amount
         });
+    }
+
+    /// <summary>
+    /// Sets the transient emissive light level emitted by an entity.
+    /// </summary>
+    /// <param name="entityId">The entity identifier to update.</param>
+    /// <param name="lightLevel">The emitted light level in the range <c>0..15</c>.</param>
+    internal bool SetEntityEmissiveLight(int entityId, byte lightLevel)
+    {
+        if (!_entities.ContainsKey(entityId))
+        {
+            return false;
+        }
+
+        if (lightLevel == 0)
+        {
+            return _entityLightLevels.Remove(entityId);
+        }
+
+        if (_entityLightLevels.TryGetValue(entityId, out var existingLightLevel) &&
+            existingLightLevel == lightLevel)
+        {
+            return false;
+        }
+
+        _entityLightLevels[entityId] = lightLevel;
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves the transient emissive light level emitted by an entity.
+    /// </summary>
+    /// <param name="entity">The entity whose emitted light should be resolved.</param>
+    /// <returns>The emitted light level in the range <c>0..15</c>.</returns>
+    internal byte GetResolvedEmissiveLight(Entity entity)
+    {
+        var configuredLight = _entityLightLevels.TryGetValue(entity.EntityId, out var lightLevel)
+            ? lightLevel
+            : (byte)0;
+
+        return entity.Type == EntityType.Player
+            ? (byte)Math.Max(DefaultPlayerLightLevel, configuredLight)
+            : configuredLight;
     }
 
     /// <summary>
@@ -370,6 +416,7 @@ public sealed class EntityManager
         foreach (var entityId in removedIds)
         {
             _entities.Remove(entityId);
+            _entityLightLevels.Remove(entityId);
             _playerInputStates.Remove(entityId);
             MarkPersistenceDirty();
         }

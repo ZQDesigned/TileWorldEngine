@@ -178,6 +178,21 @@ public sealed class WorldRuntimePhaseTwoTests
     }
 
     [Fact]
+    public void SpawnedDrop_UsesCenteredBoundsWithinSourceTile()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+
+        var dropId = runtime.EntityManager.SpawnDrop(1001, new Float2(4.5f, 6.5f));
+
+        Assert.True(runtime.TryGetEntity(dropId, out var drop));
+        Assert.InRange(drop.WorldBounds.Left, 4f, 4.5f);
+        Assert.InRange(drop.WorldBounds.Right, 4.5f, 5f);
+        Assert.InRange(drop.WorldBounds.Top, 6f, 6.5f);
+        Assert.InRange(drop.WorldBounds.Bottom, 6.5f, 7f);
+    }
+
+    [Fact]
     public void ObjectPlacement_FailsWhenFootprintLeavesVerticalBounds()
     {
         var runtime = new WorldRuntime(

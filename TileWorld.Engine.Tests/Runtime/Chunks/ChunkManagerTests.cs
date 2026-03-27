@@ -50,6 +50,7 @@ public sealed class ChunkManagerTests
         Assert.Equal((ushort)6, loadedChunk.Chunk.GetCell(4, 5).ForegroundTileId);
         Assert.Equal((ushort)3, loadedChunk.Chunk.GetCell(4, 5).Variant);
         Assert.True((loadedChunk.Chunk.DirtyFlags & ChunkDirtyFlags.RenderDirty) != ChunkDirtyFlags.None);
+        Assert.True((loadedChunk.Chunk.DirtyFlags & ChunkDirtyFlags.LightDirty) != ChunkDirtyFlags.None);
     }
 
     [Fact]
@@ -75,6 +76,7 @@ public sealed class ChunkManagerTests
         Assert.Equal(ChunkLoadSource.Generated, result.Source);
         Assert.Equal(new ChunkCoord(-1, -2), result.Chunk.Coord);
         Assert.True((result.Chunk.DirtyFlags & ChunkDirtyFlags.SaveDirty) != ChunkDirtyFlags.None);
+        Assert.True((result.Chunk.DirtyFlags & ChunkDirtyFlags.LightDirty) != ChunkDirtyFlags.None);
     }
 
     [Fact]

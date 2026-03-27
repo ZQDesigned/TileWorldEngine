@@ -13,7 +13,7 @@ The repository is no longer at a "phase one only" state. It now includes:
 - a backend-neutral render command pipeline,
 - a MonoGame compatibility host that keeps MonoGame out of the game application project,
 - a Desktop sandbox shell with world selection, in-world interaction, and debug tooling,
-- the first slice of phase 4: procedural world generation, biome queries, chunk source tracking, and streaming foundations.
+- the first slice of phase 4: procedural world generation, biome queries, chunk source tracking, streaming foundations, and single-channel runtime lighting.
 
 ## Design Philosophy
 
@@ -43,6 +43,7 @@ Implemented areas include:
 - static objects with occupancy, support checks, and persistence,
 - basic entity simulation, player movement, drops, and tile collision,
 - generator-driven world bootstrap with biome lookup,
+- derived single-channel runtime lighting for sky light and emissive sources,
 - a Desktop sandbox shell with world selection, pause overlay, debug overlay, and save/load validation paths.
 
 ## Solution Layout

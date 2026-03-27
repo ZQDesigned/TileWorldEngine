@@ -17,6 +17,13 @@ internal sealed class FlatDebugWorldGenerator : IWorldGenerator
         return GenerateFlatChunk(context, coord, topTileId: 2, subsurfaceTileId: 1, wallId: 2);
     }
 
+    public int GetSurfaceHeight(WorldGenerationContext context, int worldX)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        _ = worldX;
+        return context.Metadata.SpawnTile.Y + 2;
+    }
+
     public int GetBiomeId(WorldGenerationContext context, WorldTileCoord coord)
     {
         ArgumentNullException.ThrowIfNull(context);

@@ -114,12 +114,12 @@ public sealed class WorldRenderer
 
             foreach (var command in cache.BackgroundCommands)
             {
-                renderContext.DrawSprite(ToScreenSpace(command));
+                renderContext.DrawSprite(ToScreenSpace(ApplyTileLighting(runtime, command)));
             }
 
             foreach (var command in cache.ForegroundCommands)
             {
-                renderContext.DrawSprite(ToScreenSpace(command));
+                renderContext.DrawSprite(ToScreenSpace(ApplyTileLighting(runtime, command)));
             }
         }
 
@@ -192,7 +192,7 @@ public sealed class WorldRenderer
                     continue;
                 }
 
-                yield return ToScreenSpace(BuildObjectCommand(runtime, instance, objectDef));
+                yield return ToScreenSpace(ApplyRectCenterLighting(BuildObjectCommand(runtime, instance, objectDef), runtime));
             }
         }
     }
@@ -237,7 +237,7 @@ public sealed class WorldRenderer
                 new RectI(0, 0, 1, 1),
                 worldBoundsPixels,
                 tint,
-                0.45f));
+                0.45f)).WithLighting(runtime, worldBoundsPixels, _settings);
         }
     }
 
@@ -281,6 +281,69 @@ public sealed class WorldRenderer
     private static int GetInclusiveBottom(RectI bounds)
     {
         return bounds.Height == 0 ? bounds.Top : bounds.Bottom - 1;
+    }
+
+    private static int FloorDivide(int value, int divisor)
+    {
+        var quotient = value / divisor;
+        var remainder = value % divisor;
+
+        if (remainder < 0)
+        {
+            quotient--;
+        }
+
+        return quotient;
+    }
+
+    private SpriteDrawCommand ApplyTileLighting(WorldRuntime runtime, SpriteDrawCommand command)
+    {
+        var tileCoord = new WorldTileCoord(
+            FloorDivide(command.DestinationRectPixels.X, _settings.TileSizePixels),
+            FloorDivide(command.DestinationRectPixels.Y, _settings.TileSizePixels));
+
+        return ApplyLightLevel(command, runtime.GetLightLevel(tileCoord));
+    }
+
+    private SpriteDrawCommand ApplyRectCenterLighting(SpriteDrawCommand command, WorldRuntime runtime)
+    {
+        var centerPixelX = command.DestinationRectPixels.X + (command.DestinationRectPixels.Width / 2);
+        var centerPixelY = command.DestinationRectPixels.Y + (command.DestinationRectPixels.Height / 2);
+        var tileCoord = new WorldTileCoord(
+            FloorDivide(centerPixelX, _settings.TileSizePixels),
+            FloorDivide(centerPixelY, _settings.TileSizePixels));
+
+        return ApplyLightLevel(command, runtime.GetLightLevel(tileCoord));
+    }
+
+    private static SpriteDrawCommand ApplyLightLevel(SpriteDrawCommand command, byte lightLevel)
+    {
+        return command with
+        {
+            Tint = command.Tint.MultiplyBrightness(lightLevel)
+        };
+    }
+}
+
+internal static class WorldRendererLightingExtensions
+{
+    public static SpriteDrawCommand WithLighting(
+        this SpriteDrawCommand command,
+        WorldRuntime runtime,
+        RectI worldBoundsPixels,
+        WorldRenderSettings settings)
+    {
+        var centerPixelX = worldBoundsPixels.X + (worldBoundsPixels.Width / 2);
+        var centerPixelY = worldBoundsPixels.Y + (worldBoundsPixels.Height / 2);
+        var tileCoord = new WorldTileCoord(
+            FloorDivide(centerPixelX, settings.TileSizePixels),
+            FloorDivide(centerPixelY, settings.TileSizePixels));
+        var lightLevel = runtime.GetLightLevel(tileCoord);
+
+        return command with
+        {
+            Tint = command.Tint.MultiplyBrightness(lightLevel)
+        };
     }
 
     private static int FloorDivide(int value, int divisor)

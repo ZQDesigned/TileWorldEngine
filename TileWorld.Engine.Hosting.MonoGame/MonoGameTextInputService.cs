@@ -2,6 +2,7 @@ using System;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 using Microsoft.Xna.Framework;
 using TileWorld.Engine.Hosting;
 
@@ -27,6 +28,7 @@ public sealed class MonoGameTextInputService : ITextInputService, IDisposable
     {
         _window = window ?? throw new ArgumentNullException(nameof(window));
         _window.TextInput += HandleTextInput;
+        EnsurePlatformTextInputState();
     }
 
     /// <inheritdoc />
@@ -65,6 +67,7 @@ public sealed class MonoGameTextInputService : ITextInputService, IDisposable
         _maxLength = request.MaxLength;
         _characterFilter = request.CharacterFilter;
         _pendingRequest = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        EnsurePlatformTextInputState();
         _cancellationRegistration = cancellationToken.CanBeCanceled
             ? cancellationToken.Register(CancelActiveRequest)
             : default;
@@ -76,7 +79,14 @@ public sealed class MonoGameTextInputService : ITextInputService, IDisposable
     {
         _window.TextInput -= HandleTextInput;
         CompleteActiveRequest(CurrentText);
+        SdlTextInputInterop.SetTextInputActive(false);
         _cancellationRegistration.Dispose();
+    }
+
+    internal void EnsurePlatformTextInputState()
+    {
+        SdlTextInputInterop.ConfigureHints();
+        SdlTextInputInterop.SetTextInputActive(IsRequestActive);
     }
 
     private void HandleTextInput(object sender, TextInputEventArgs args)
@@ -135,6 +145,82 @@ public sealed class MonoGameTextInputService : ITextInputService, IDisposable
         _cancellationRegistration = default;
         _characterFilter = null;
         _maxLength = 0;
+        SdlTextInputInterop.SetTextInputActive(false);
         pendingRequest.TrySetResult(result);
+    }
+
+    private static class SdlTextInputInterop
+    {
+        private static bool _hasLoggedInteropFailure;
+        private static bool _hintsConfigured;
+
+        public static void ConfigureHints()
+        {
+            if (_hintsConfigured)
+            {
+                return;
+            }
+
+            try
+            {
+                SDL_SetHint("SDL_IME_SHOW_UI", "0");
+                SDL_SetHint("SDL_IME_INTERNAL_EDITING", "0");
+                _hintsConfigured = true;
+            }
+            catch (DllNotFoundException)
+            {
+                LogInteropFailureOnce();
+            }
+            catch (EntryPointNotFoundException)
+            {
+                LogInteropFailureOnce();
+            }
+        }
+
+        public static void SetTextInputActive(bool isActive)
+        {
+            try
+            {
+                if (isActive)
+                {
+                    SDL_StartTextInput();
+                }
+                else
+                {
+                    SDL_StopTextInput();
+                }
+            }
+            catch (DllNotFoundException)
+            {
+                LogInteropFailureOnce();
+            }
+            catch (EntryPointNotFoundException)
+            {
+                LogInteropFailureOnce();
+            }
+        }
+
+        [DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void SDL_StartTextInput();
+
+        [DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void SDL_StopTextInput();
+
+        [DllImport("SDL2", CallingConvention = CallingConvention.Cdecl, EntryPoint = "SDL_SetHint")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        private static extern bool SDL_SetHint(
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
+
+        private static void LogInteropFailureOnce()
+        {
+            if (_hasLoggedInteropFailure)
+            {
+                return;
+            }
+
+            _hasLoggedInteropFailure = true;
+            Core.Diagnostics.EngineDiagnostics.Warn("SDL text input interop is unavailable. IME text-mode isolation may be degraded on this platform.");
+        }
     }
 }

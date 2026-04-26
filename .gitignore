@@ -12,3 +12,4 @@ docs/_site/
 docs/api/.manifest
 docs/api/*.yml
 docs/api/toc.yml
+artifacts/

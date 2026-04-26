@@ -60,6 +60,13 @@ internal sealed class MonoGameFrameInputBuilder
         return input;
     }
 
+    public void Reset()
+    {
+        _hasPreviousState = false;
+        _previousKeyboardState = default;
+        _previousMouseState = default;
+    }
+
     private static bool IsInsideViewport(MouseState mouseState, Int2 viewportSizePixels)
     {
         return mouseState.X >= 0 &&

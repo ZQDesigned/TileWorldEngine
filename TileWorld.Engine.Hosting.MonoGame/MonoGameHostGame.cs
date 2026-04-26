@@ -19,7 +19,9 @@ internal sealed class MonoGameHostGame : Game
     private readonly MonoGameFrameInputBuilder _inputBuilder = new();
     private readonly MonoGameHostOptions _options;
     private readonly MonoGameTextInputService _textInputService;
+    private bool _isWindowInputActive = true;
     private bool _shutdownAttempted;
+    private bool _wasTextInputRequestActive;
     private MonoGameHostServices _hostServices = null!;
     private MonoGameRenderContext _renderContext = null!;
     private MonoGameTextureCatalog _textureCatalog = null!;
@@ -38,6 +40,8 @@ internal sealed class MonoGameHostGame : Game
 
         IsMouseVisible = options.IsMouseVisible;
         Window.AllowUserResizing = options.AllowUserResizing;
+        Activated += HandleActivated;
+        Deactivated += HandleDeactivated;
         Exiting += HandleExiting;
     }
 
@@ -57,6 +61,7 @@ internal sealed class MonoGameHostGame : Game
             _application.Initialize();
 
             base.Initialize();
+            _textInputService.EnsurePlatformTextInputState();
         }
         catch (Exception exception)
         {
@@ -77,7 +82,16 @@ internal sealed class MonoGameHostGame : Game
     {
         try
         {
+            var isTextInputRequestActive = _textInputService.IsRequestActive;
+            _textInputService.EnsurePlatformTextInputState();
+            if (isTextInputRequestActive != _wasTextInputRequestActive)
+            {
+                _inputBuilder.Reset();
+                _wasTextInputRequestActive = isTextInputRequestActive;
+            }
+
             if (_options.EnableDefaultEscapeToExit &&
+                _isWindowInputActive &&
                 (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed ||
                  Keyboard.GetState().IsKeyDown(Keys.Escape)))
             {
@@ -85,7 +99,9 @@ internal sealed class MonoGameHostGame : Game
                 return;
             }
 
-            var frameInput = _inputBuilder.Build(new Int2(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height));
+            var frameInput = _isWindowInputActive
+                ? _inputBuilder.Build(new Int2(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height))
+                : FrameInput.Empty;
             _application.Update(
                 new FrameTime(gameTime.TotalGameTime, gameTime.ElapsedGameTime, IsFixedTimeStep),
                 frameInput);
@@ -143,6 +159,20 @@ internal sealed class MonoGameHostGame : Game
     private void HandleExiting(object sender, EventArgs args)
     {
         TryShutdown("Exit");
+    }
+
+    private void HandleActivated(object sender, EventArgs args)
+    {
+        _isWindowInputActive = true;
+        _textInputService.EnsurePlatformTextInputState();
+        _inputBuilder.Reset();
+    }
+
+    private void HandleDeactivated(object sender, EventArgs args)
+    {
+        _isWindowInputActive = false;
+        _textInputService.EnsurePlatformTextInputState();
+        _inputBuilder.Reset();
     }
 
     private static double ResolveAutoCloseAfterSeconds()

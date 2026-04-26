@@ -4,8 +4,9 @@ using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.World.Cells;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
+using TileWorld.Engine.World.Generation;
 
-namespace TileWorld.Engine.World.Generation;
+namespace TileWorld.Testing.Desktop.WorldGeneration;
 
 internal sealed class OverworldWorldGenerator : IWorldGenerator
 {
@@ -14,7 +15,7 @@ internal sealed class OverworldWorldGenerator : IWorldGenerator
     private const int SpawnFlatHalfWidth = 18;
     private const int SpawnProtectedHalfWidth = 26;
 
-    public string GeneratorId => WorldGeneratorIdNormalizer.Overworld;
+    public string GeneratorId => DesktopWorldGeneratorIds.Overworld;
 
     public int GeneratorVersion => 1;
 
@@ -40,7 +41,7 @@ internal sealed class OverworldWorldGenerator : IWorldGenerator
             for (var localY = 0; localY < ChunkDimensions.Height; localY++)
             {
                 var worldY = chunkOrigin.Y + localY;
-                if (!WorldVerticalBoundsUtility.IsTileYWithinBounds(context.Metadata, worldY))
+                if (!IsTileYWithinBounds(context.Metadata, worldY))
                 {
                     continue;
                 }
@@ -300,5 +301,20 @@ internal sealed class OverworldWorldGenerator : IWorldGenerator
             var normalized = (hash & 0x7fffffff) / (float)int.MaxValue;
             return (normalized * 2f) - 1f;
         }
+    }
+
+    private static bool IsTileYWithinBounds(TileWorld.Engine.World.WorldMetadata metadata, int worldY)
+    {
+        if (metadata.MinTileY is { } minTileY && worldY < minTileY)
+        {
+            return false;
+        }
+
+        if (metadata.MaxTileY is { } maxTileY && worldY > maxTileY)
+        {
+            return false;
+        }
+
+        return true;
     }
 }

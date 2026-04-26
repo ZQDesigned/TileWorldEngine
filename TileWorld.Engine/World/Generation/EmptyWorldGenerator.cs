@@ -1,31 +1,32 @@
-using System;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
 
 namespace TileWorld.Engine.World.Generation;
 
-internal sealed class LegacyFlatWorldGenerator : IWorldGenerator
+internal sealed class EmptyWorldGenerator : IWorldGenerator
 {
-    public string GeneratorId => WorldGeneratorIdNormalizer.LegacyFlat;
+    internal static EmptyWorldGenerator Instance { get; } = new();
+
+    public string GeneratorId => string.Empty;
 
     public int GeneratorVersion => 1;
 
     public ChunkGenerationResult GenerateChunk(WorldGenerationContext context, ChunkCoord coord)
     {
-        return FlatDebugWorldGenerator.GenerateFlatChunk(context, coord, topTileId: 2, subsurfaceTileId: 1, wallId: 1);
+        return new ChunkGenerationResult(new Chunk(coord));
     }
 
     public int GetSurfaceHeight(WorldGenerationContext context, int worldX)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        _ = context;
         _ = worldX;
-        return context.Metadata.SpawnTile.Y + 2;
+        return 0;
     }
 
     public int GetBiomeId(WorldGenerationContext context, WorldTileCoord coord)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        _ = context;
         _ = coord;
-        return 1;
+        return 0;
     }
 }

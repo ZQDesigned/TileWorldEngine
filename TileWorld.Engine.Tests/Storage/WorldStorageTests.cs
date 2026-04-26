@@ -128,7 +128,7 @@ public sealed class WorldStorageTests
     }
 
     [Fact]
-    public void LoadMetadata_MigratesLegacyWorldFormatMetadata()
+    public void LoadMetadata_MigratesLegacyWorldFormatMetadataWithoutChoosingAGameGenerator()
     {
         using var directory = new TestDirectoryScope();
         File.WriteAllText(
@@ -151,12 +151,12 @@ public sealed class WorldStorageTests
         var metadata = new WorldStorage().LoadMetadata(directory.Path);
 
         Assert.Equal(2, metadata.WorldFormatVersion);
-        Assert.Equal("legacy_flat", metadata.GeneratorId);
+        Assert.Equal(string.Empty, metadata.GeneratorId);
         Assert.Equal(1, metadata.GeneratorVersion);
     }
 
     [Fact]
-    public void LoadMetadata_NormalizesLegacyGeneratorAliases()
+    public void LoadMetadata_PreservesLegacyGeneratorIdentifiersForHostsToResolve()
     {
         using var directory = new TestDirectoryScope();
         File.WriteAllText(
@@ -180,7 +180,7 @@ public sealed class WorldStorageTests
 
         var metadata = new WorldStorage().LoadMetadata(directory.Path);
 
-        Assert.Equal("overworld", metadata.GeneratorId);
+        Assert.Equal("overworld_v1", metadata.GeneratorId);
         Assert.Equal(1, metadata.GeneratorVersion);
     }
 }

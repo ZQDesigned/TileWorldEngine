@@ -11,6 +11,7 @@ using TileWorld.Engine.World.Cells;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
 using TileWorld.Engine.World.Generation;
+using TileWorld.Engine.Tests.World.Generation;
 
 namespace TileWorld.Engine.Tests.Runtime.Chunks;
 
@@ -69,7 +70,7 @@ public sealed class ChunkManagerTests
             new WorldStorage(),
             directory.Path,
             CreateRegistry(),
-            new FlatDebugWorldGenerator());
+            new FlatTestWorldGenerator());
 
         var result = chunkManager.GetOrLoadChunkDetailed(new ChunkCoord(-1, -2));
 
@@ -125,7 +126,7 @@ public sealed class ChunkManagerTests
             new WorldStorage(),
             directory.Path,
             CreateRegistry(),
-            new FlatDebugWorldGenerator(),
+            new FlatTestWorldGenerator(),
             activeRadiusInChunks: 1,
             eventBus);
 
@@ -150,7 +151,7 @@ public sealed class ChunkManagerTests
             new WorldStorage(),
             directory.Path,
             CreateRegistry(),
-            new FlatDebugWorldGenerator(),
+            new FlatTestWorldGenerator(),
             activeRadiusInChunks: 1);
 
         chunkManager.EnsureActiveAround(new WorldTileCoord(0, 16));
@@ -168,7 +169,7 @@ public sealed class ChunkManagerTests
             new WorldStorage(),
             directory.Path,
             CreateRegistry(),
-            new FlatDebugWorldGenerator(),
+            new FlatTestWorldGenerator(),
             activeRadiusInChunks: 1);
 
         chunkManager.EnsureActiveForTileArea(new RectI(0, 0, 64, 32));

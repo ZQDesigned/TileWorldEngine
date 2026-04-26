@@ -68,6 +68,7 @@ public sealed class WorldCatalogTests
             var firstWorld = catalog.CreateWorld(new WorldCreationOptions
             {
                 Name = "Sandbox World",
+                GeneratorId = "sandbox_overworld",
                 SpawnTile = new Int2(4, 18),
                 MinTileY = -64,
                 MaxTileY = 255
@@ -75,13 +76,14 @@ public sealed class WorldCatalogTests
             var secondWorld = catalog.CreateWorld(new WorldCreationOptions
             {
                 Name = "Sandbox World",
+                GeneratorId = "sandbox_overworld",
                 SpawnTile = new Int2(8, 20)
             });
 
             Assert.NotEqual(firstWorld.WorldPath, secondWorld.WorldPath);
             Assert.NotEqual(firstWorld.DirectoryName, secondWorld.DirectoryName);
             Assert.Equal("Sandbox World", storage.LoadMetadata(firstWorld.WorldPath).Name);
-            Assert.Equal("overworld", storage.LoadMetadata(firstWorld.WorldPath).GeneratorId);
+            Assert.Equal("sandbox_overworld", storage.LoadMetadata(firstWorld.WorldPath).GeneratorId);
             Assert.Equal(-64, storage.LoadMetadata(firstWorld.WorldPath).MinTileY);
             Assert.Equal(255, storage.LoadMetadata(firstWorld.WorldPath).MaxTileY);
             Assert.Equal(new Int2(8, 20), storage.LoadMetadata(secondWorld.WorldPath).SpawnTile);

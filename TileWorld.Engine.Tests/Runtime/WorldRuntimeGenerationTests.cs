@@ -10,6 +10,7 @@ using TileWorld.Engine.Tests.Storage;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
+using TileWorld.Engine.Tests.World.Generation;
 
 namespace TileWorld.Engine.Tests.Runtime;
 
@@ -24,6 +25,7 @@ public sealed class WorldRuntimeGenerationTests
             WorldId = "generated-world",
             Name = "Generated World",
             Seed = 12345,
+            GeneratorId = DeterministicTerrainTestWorldGenerator.GeneratorIdValue,
             SpawnTile = new Int2(4, 18)
         });
 
@@ -51,6 +53,7 @@ public sealed class WorldRuntimeGenerationTests
             WorldId = "biome-world",
             Name = "Biome World",
             Seed = 67890,
+            GeneratorId = DeterministicTerrainTestWorldGenerator.GeneratorIdValue,
             SpawnTile = new Int2(4, 18)
         });
 
@@ -138,7 +141,15 @@ public sealed class WorldRuntimeGenerationTests
 
         if (string.IsNullOrWhiteSpace(worldPath))
         {
-            return new WorldRuntime(new WorldData(metadata), registry);
+            return new WorldRuntime(
+                new WorldData(metadata),
+                registry,
+                new WorldRuntimeOptions
+                {
+                    WorldGeneratorRegistry = CreateGeneratorRegistry(),
+                    SaveOnShutdown = false,
+                    EnableAutoSave = false
+                });
         }
 
         return new WorldRuntime(
@@ -149,7 +160,15 @@ public sealed class WorldRuntimeGenerationTests
                 WorldPath = worldPath,
                 WorldStorage = new WorldStorage(),
                 SaveOnShutdown = true,
-                EnableAutoSave = false
+                EnableAutoSave = false,
+                WorldGeneratorRegistry = CreateGeneratorRegistry()
             });
+    }
+
+    private static TileWorld.Engine.World.Generation.WorldGeneratorRegistry CreateGeneratorRegistry()
+    {
+        var registry = new TileWorld.Engine.World.Generation.WorldGeneratorRegistry();
+        registry.Register(new DeterministicTerrainTestWorldGenerator());
+        return registry;
     }
 }

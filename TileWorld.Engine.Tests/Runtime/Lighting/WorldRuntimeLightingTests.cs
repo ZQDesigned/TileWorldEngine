@@ -11,6 +11,7 @@ using TileWorld.Engine.Tests.Storage;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
+using TileWorld.Engine.Tests.World.Generation;
 
 namespace TileWorld.Engine.Tests.Runtime.Lighting;
 
@@ -39,7 +40,7 @@ public sealed class WorldRuntimeLightingTests
         {
             WorldId = "lighting-flat-world",
             Name = "Lighting Flat World",
-            GeneratorId = "flat_debug"
+            GeneratorId = FlatTestWorldGenerator.GeneratorIdValue
         });
         runtime.Initialize();
         runtime.EnsureChunkLoaded(new ChunkCoord(0, 0));
@@ -57,7 +58,7 @@ public sealed class WorldRuntimeLightingTests
         {
             WorldId = "lighting-gradient-world",
             Name = "Lighting Gradient World",
-            GeneratorId = "flat_debug"
+            GeneratorId = FlatTestWorldGenerator.GeneratorIdValue
         });
         runtime.Initialize();
         runtime.EnsureChunkLoaded(new ChunkCoord(0, 0));
@@ -80,7 +81,7 @@ public sealed class WorldRuntimeLightingTests
         {
             WorldId = "lighting-underground-world",
             Name = "Lighting Underground World",
-            GeneratorId = "flat_debug"
+            GeneratorId = FlatTestWorldGenerator.GeneratorIdValue
         });
         runtime.Initialize();
         runtime.EnsureChunkLoaded(new ChunkCoord(0, 1));
@@ -146,7 +147,7 @@ public sealed class WorldRuntimeLightingTests
         {
             WorldId = "lighting-held-light-world",
             Name = "Lighting Held Light World",
-            GeneratorId = "flat_debug"
+            GeneratorId = FlatTestWorldGenerator.GeneratorIdValue
         });
         runtime.Initialize();
         runtime.EnsureChunkLoaded(new ChunkCoord(0, 0));
@@ -193,7 +194,7 @@ public sealed class WorldRuntimeLightingTests
         {
             WorldId = "lighting-blocking-world",
             Name = "Lighting Blocking World",
-            GeneratorId = "flat_debug"
+            GeneratorId = FlatTestWorldGenerator.GeneratorIdValue
         });
         runtime.Initialize();
         runtime.EnsureChunkLoaded(new ChunkCoord(0, 0));
@@ -267,7 +268,8 @@ public sealed class WorldRuntimeLightingTests
                 WorldPath = worldPath,
                 WorldStorage = new WorldStorage(),
                 SaveOnShutdown = false,
-                EnableAutoSave = false
+                EnableAutoSave = false,
+                WorldGeneratorRegistry = TestWorldGeneratorRegistryFactory.CreateFlatRegistry()
             });
     }
 

@@ -38,7 +38,7 @@ public sealed class WorldRuntime
     private const int MaxLightChunkRebuildsPerFrame = 4;
     private bool _isInitialized;
     private readonly IWorldGenerator _worldGenerator;
-    private readonly WorldGeneratorRegistry _worldGeneratorRegistry;
+    private readonly IWorldGenerator _chunkGenerator;
     private TimeSpan? _lastMutationTime;
     private TimeSpan _lastObservedUpdateTime;
     private TimeSpan _lastSaveTime;
@@ -68,15 +68,15 @@ public sealed class WorldRuntime
         WorldData = worldData;
         ContentRegistry = contentRegistry;
         Options = options ?? new WorldRuntimeOptions();
-        _worldGeneratorRegistry = WorldGeneratorRegistry.CreateDefault();
-        _worldGenerator = _worldGeneratorRegistry.ResolveOrDefault(worldData.Metadata.GeneratorId);
+        _worldGenerator = ResolveWorldGenerator(worldData.Metadata, Options, out var chunkGenerator);
+        _chunkGenerator = chunkGenerator;
         EventBus = new WorldEventBus();
         EventBus.Subscribe<TileChangedEvent>(_ => _pendingMutationObserved = true);
         EventBus.Subscribe<ObjectPlacedEvent>(_ => _pendingMutationObserved = true);
         EventBus.Subscribe<ObjectRemovedEvent>(_ => _pendingMutationObserved = true);
 
         Storage = CreateWorldStorage(Options);
-        ChunkManager = CreateChunkManager(worldData, contentRegistry, Storage, _worldGenerator, Options, EventBus);
+        ChunkManager = CreateChunkManager(worldData, contentRegistry, Storage, _chunkGenerator, Options, EventBus);
         QueryService = new WorldQueryService(worldData, contentRegistry, chunkManager: ChunkManager);
         DirtyTracker = new DirtyTracker(worldData);
         EntityManager = new EntityManager(new TileCollisionService(QueryService), contentRegistry, EventBus);
@@ -650,7 +650,9 @@ public sealed class WorldRuntime
     private void NormalizeMetadataBeforeSave()
     {
         var metadata = WorldData.Metadata;
-        var generatorMatchesMetadata = string.Equals(metadata.GeneratorId, _worldGenerator.GeneratorId, StringComparison.OrdinalIgnoreCase);
+        var normalizedMetadataGeneratorId = WorldGeneratorIdNormalizer.Normalize(metadata.GeneratorId);
+        var shouldWriteResolvedGenerator = string.IsNullOrWhiteSpace(normalizedMetadataGeneratorId) &&
+                                           !string.IsNullOrWhiteSpace(_worldGenerator.GeneratorId);
         var normalizedMetadata = new WorldMetadata
         {
             WorldId = metadata.WorldId,
@@ -658,12 +660,14 @@ public sealed class WorldRuntime
             Seed = metadata.Seed,
             WorldFormatVersion = Math.Max(2, metadata.WorldFormatVersion),
             ChunkFormatVersion = 2,
-            GeneratorId = string.IsNullOrWhiteSpace(metadata.GeneratorId) || !generatorMatchesMetadata
+            GeneratorId = shouldWriteResolvedGenerator
                 ? _worldGenerator.GeneratorId
-                : metadata.GeneratorId,
-            GeneratorVersion = metadata.GeneratorVersion > 0 && generatorMatchesMetadata
-                ? metadata.GeneratorVersion
-                : _worldGenerator.GeneratorVersion,
+                : normalizedMetadataGeneratorId,
+            GeneratorVersion = shouldWriteResolvedGenerator
+                ? _worldGenerator.GeneratorVersion
+                : metadata.GeneratorVersion > 0
+                    ? metadata.GeneratorVersion
+                    : 1,
             WorldTime = metadata.WorldTime,
             BoundsMode = metadata.BoundsMode,
             SpawnTile = metadata.SpawnTile,
@@ -704,6 +708,43 @@ public sealed class WorldRuntime
         return storage is not null
             ? new ChunkManager(worldData, storage, options.WorldPath, contentRegistry, generator, options.ActiveRadiusInChunks, eventBus)
             : null;
+    }
+
+    private static IWorldGenerator ResolveWorldGenerator(
+        WorldMetadata metadata,
+        WorldRuntimeOptions options,
+        out IWorldGenerator chunkGenerator)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var registry = options.WorldGeneratorRegistry ?? new WorldGeneratorRegistry();
+        var normalizedMetadataGeneratorId = WorldGeneratorIdNormalizer.Normalize(metadata.GeneratorId);
+
+        if (!string.IsNullOrWhiteSpace(normalizedMetadataGeneratorId))
+        {
+            if (registry.TryResolve(normalizedMetadataGeneratorId, out var metadataGenerator))
+            {
+                chunkGenerator = metadataGenerator;
+                return metadataGenerator;
+            }
+
+            EngineDiagnostics.Warn(
+                $"WorldRuntime could not resolve generator '{normalizedMetadataGeneratorId}'. Falling back to empty world generation behavior.");
+            chunkGenerator = null;
+            return EmptyWorldGenerator.Instance;
+        }
+
+        var fallbackGeneratorId = WorldGeneratorIdNormalizer.Normalize(options.FallbackGeneratorId);
+        if (!string.IsNullOrWhiteSpace(fallbackGeneratorId) &&
+            registry.TryResolve(fallbackGeneratorId, out var fallbackGenerator))
+        {
+            chunkGenerator = fallbackGenerator;
+            return fallbackGenerator;
+        }
+
+        chunkGenerator = null;
+        return EmptyWorldGenerator.Instance;
     }
 
     private void UpdateAutoSave(FrameTime frameTime)

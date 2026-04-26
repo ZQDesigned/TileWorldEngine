@@ -9,6 +9,7 @@ using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Input;
 using TileWorld.Engine.Render;
 using TileWorld.Engine.Storage;
+using TileWorld.Testing.Desktop.WorldGeneration;
 
 namespace TileWorld.Testing.Desktop;
 
@@ -166,7 +167,7 @@ internal sealed class WorldSelectScene : IEngineScene
         var createdWorld = _worldCatalog.CreateWorld(new WorldCreationOptions
         {
             Name = worldName.Trim(),
-            GeneratorId = "overworld",
+            GeneratorId = DesktopWorldGeneratorIds.Overworld,
             SpawnTile = new Int2(4, 18)
         });
         EngineDiagnostics.Info($"WorldSelectScene created new world. Name='{createdWorld.Name}', Directory='{createdWorld.DirectoryName}'.");

@@ -15,7 +15,7 @@ public sealed class WorldMetadataTests
         Assert.Equal(0, metadata.Seed);
         Assert.Equal(2, metadata.WorldFormatVersion);
         Assert.Equal(2, metadata.ChunkFormatVersion);
-        Assert.Equal("overworld", metadata.GeneratorId);
+        Assert.Equal(string.Empty, metadata.GeneratorId);
         Assert.Equal(1, metadata.GeneratorVersion);
         Assert.Equal(0L, metadata.WorldTime);
         Assert.Equal(WorldBoundsMode.LargeFinite, metadata.BoundsMode);

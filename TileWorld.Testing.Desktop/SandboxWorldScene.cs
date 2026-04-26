@@ -22,6 +22,7 @@ using TileWorld.Engine.Storage;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Coordinates;
 using TileWorld.Engine.World.Objects;
+using TileWorld.Testing.Desktop.WorldGeneration;
 
 namespace TileWorld.Testing.Desktop;
 
@@ -114,7 +115,9 @@ internal sealed class SandboxWorldScene : IEngineScene
                 AutoSaveInterval = TimeSpan.FromSeconds(30),
                 AutoSaveIdleDelay = TimeSpan.FromSeconds(4),
                 MinimumAutoSaveSpacing = TimeSpan.FromSeconds(8),
-                ActiveRadiusInChunks = 1
+                ActiveRadiusInChunks = 1,
+                WorldGeneratorRegistry = DesktopWorldGeneratorRegistry.CreateDefault(),
+                FallbackGeneratorId = DesktopWorldGeneratorIds.LegacyFlat
             });
         _camera = new Camera2D(new Int2(0, 0), new Int2(800, 480));
         _worldRenderer = new WorldRenderer(

@@ -1,5 +1,6 @@
 using System;
 using TileWorld.Engine.Storage;
+using TileWorld.Engine.World.Generation;
 
 namespace TileWorld.Engine.Runtime;
 
@@ -47,4 +48,14 @@ public sealed class WorldRuntimeOptions
     /// Gets the chunk radius kept active around the current attention center.
     /// </summary>
     public int ActiveRadiusInChunks { get; init; } = 2;
+
+    /// <summary>
+    /// Gets the gameplay-provided world generator registry used to resolve metadata generator identifiers.
+    /// </summary>
+    public WorldGeneratorRegistry WorldGeneratorRegistry { get; init; } = new();
+
+    /// <summary>
+    /// Gets the optional fallback generator identifier used when loading legacy worlds with no generator metadata.
+    /// </summary>
+    public string FallbackGeneratorId { get; init; } = string.Empty;
 }

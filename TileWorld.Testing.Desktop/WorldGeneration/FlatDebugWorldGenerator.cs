@@ -3,12 +3,13 @@ using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.World.Cells;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
+using TileWorld.Engine.World.Generation;
 
-namespace TileWorld.Engine.World.Generation;
+namespace TileWorld.Testing.Desktop.WorldGeneration;
 
 internal sealed class FlatDebugWorldGenerator : IWorldGenerator
 {
-    public string GeneratorId => WorldGeneratorIdNormalizer.FlatDebug;
+    public string GeneratorId => DesktopWorldGeneratorIds.FlatDebug;
 
     public int GeneratorVersion => 1;
 
@@ -50,7 +51,7 @@ internal sealed class FlatDebugWorldGenerator : IWorldGenerator
         for (var localY = 0; localY < ChunkDimensions.Height; localY++)
         {
             var worldY = chunkOrigin.Y + localY;
-            if (!WorldVerticalBoundsUtility.IsTileYWithinBounds(context.Metadata, worldY))
+            if (!IsTileYWithinBounds(context.Metadata, worldY))
             {
                 continue;
             }
@@ -72,6 +73,21 @@ internal sealed class FlatDebugWorldGenerator : IWorldGenerator
         }
 
         return new ChunkGenerationResult(chunk);
+    }
+
+    private static bool IsTileYWithinBounds(TileWorld.Engine.World.WorldMetadata metadata, int worldY)
+    {
+        if (metadata.MinTileY is { } minTileY && worldY < minTileY)
+        {
+            return false;
+        }
+
+        if (metadata.MaxTileY is { } maxTileY && worldY > maxTileY)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static ushort ResolveTileId(ContentRegistry contentRegistry, ushort preferredTileId, ushort fallbackTileId)

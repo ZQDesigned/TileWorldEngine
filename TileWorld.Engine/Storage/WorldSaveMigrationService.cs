@@ -15,18 +15,7 @@ internal sealed class WorldSaveMigrationService
         ArgumentNullException.ThrowIfNull(metadata);
         var normalizedGeneratorId = WorldGeneratorIdNormalizer.Normalize(metadata.GeneratorId);
 
-        if (metadata.WorldFormatVersion <= 1 &&
-            string.IsNullOrWhiteSpace(metadata.GeneratorId))
-        {
-            return CloneMetadata(
-                metadata,
-                worldFormatVersion: 2,
-                generatorId: WorldGeneratorIdNormalizer.LegacyFlat,
-                generatorVersion: 1);
-        }
-
         if (metadata.WorldFormatVersion < 2 ||
-            string.IsNullOrWhiteSpace(metadata.GeneratorId) ||
             metadata.GeneratorVersion <= 0 ||
             !string.Equals(metadata.GeneratorId, normalizedGeneratorId, StringComparison.Ordinal))
         {

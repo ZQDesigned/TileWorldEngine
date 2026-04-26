@@ -1,6 +1,7 @@
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.Storage;
+using TileWorld.Engine.World.Cells;
 
 namespace TileWorld.Engine.Tests.Storage;
 
@@ -46,5 +47,33 @@ public sealed class RuntimeEntityBinarySerializerTests
         var invalidPayload = new byte[] { 0x00, 0x01, 0x02, 0x03 };
 
         Assert.Throws<InvalidDataException>(() => serializer.Deserialize(invalidPayload));
+    }
+
+    [Fact]
+    public void SerializeAndDeserialize_DoesNotPersistTransientLiquidState()
+    {
+        var serializer = new RuntimeEntityBinarySerializer();
+        var entities = new[]
+        {
+            new Entity
+            {
+                EntityId = 42,
+                Type = EntityType.Player,
+                Position = new Float2(2f, 3f),
+                Velocity = new Float2(1f, -1f),
+                LocalBounds = new AabbF(0f, 0f, 1f, 2f),
+                IsInLiquid = true,
+                Submersion = 0.75f,
+                CurrentLiquidType = LiquidKind.Honey
+            }
+        };
+
+        var payload = serializer.Serialize(entities);
+        var restored = serializer.Deserialize(payload);
+
+        var restoredEntity = Assert.Single(restored);
+        Assert.False(restoredEntity.IsInLiquid);
+        Assert.Equal(0f, restoredEntity.Submersion);
+        Assert.Equal(LiquidKind.None, restoredEntity.CurrentLiquidType);
     }
 }

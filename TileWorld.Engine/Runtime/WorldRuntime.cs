@@ -479,17 +479,43 @@ public sealed class WorldRuntime
     /// <returns><see langword="true"/> when a liquid is present in the cell.</returns>
     public bool TryGetLiquid(WorldTileCoord coord, out byte liquidType, out byte liquidAmount)
     {
-        if (!IsWithinWorldBounds(coord) ||
-            !TryGetCell(coord, out var cell))
+        var liquidState = GetLiquidState(coord);
+        if (!liquidState.HasLiquid)
         {
             liquidType = 0;
             liquidAmount = 0;
             return false;
         }
 
-        liquidType = cell.LiquidType;
-        liquidAmount = cell.LiquidAmount;
-        return liquidAmount != 0 && liquidType != 0;
+        liquidType = (byte)liquidState.Kind;
+        liquidAmount = liquidState.Amount;
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves liquid information at a world-tile coordinate.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <returns>The resolved liquid state, or <see cref="LiquidState.None"/> when no liquid is present.</returns>
+    public LiquidState GetLiquidState(WorldTileCoord coord)
+    {
+        if (!IsWithinWorldBounds(coord) ||
+            !TryGetCell(coord, out var cell) ||
+            cell.LiquidAmount == 0 ||
+            cell.LiquidType == 0)
+        {
+            return LiquidState.None;
+        }
+
+        var liquidKind = cell.LiquidType switch
+        {
+            (byte)LiquidKind.Water => LiquidKind.Water,
+            (byte)LiquidKind.Lava => LiquidKind.Lava,
+            (byte)LiquidKind.Honey => LiquidKind.Honey,
+            _ => LiquidKind.Water
+        };
+
+        return new LiquidState(liquidKind, cell.LiquidAmount);
     }
 
     /// <summary>

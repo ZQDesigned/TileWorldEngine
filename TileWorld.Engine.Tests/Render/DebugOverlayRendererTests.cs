@@ -2,12 +2,15 @@ using System;
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Content.Tiles;
 using TileWorld.Engine.Core.Math;
+using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Input;
 using TileWorld.Engine.Render;
 using TileWorld.Engine.Runtime;
 using TileWorld.Engine.Runtime.Contexts;
+using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.Runtime.Operations;
 using TileWorld.Engine.World;
+using TileWorld.Engine.World.Cells;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
 
@@ -104,6 +107,39 @@ public sealed class DebugOverlayRendererTests
         var dirtyLine = Assert.Single(frame.PanelLines, line => line.StartsWith("DIRTY: ", StringComparison.Ordinal));
         Assert.Contains("AUTOTILEDIRTY", dirtyLine, StringComparison.Ordinal);
         Assert.Contains("COLLISIONDIRTY", dirtyLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_WhenPlayerExists_IncludesPlayerLiquidStateLines()
+    {
+        var runtime = CreateRuntime();
+        var settings = new WorldRenderSettings();
+        var camera = new Camera2D(Int2.Zero, new Int2(512, 512));
+        var renderer = new WorldRenderer(camera, new ChunkRenderCacheBuilder(runtime.ContentRegistry, settings), settings);
+        var overlay = new DebugOverlayRenderer(settings);
+
+        runtime.Initialize();
+        runtime.EnsureChunkLoaded(new ChunkCoord(0, 0));
+        var playerId = runtime.SpawnPlayer(new Float2(5.5f, 5f));
+        runtime.SetLiquid(new WorldTileCoord(5, 5), (byte)LiquidKind.Water, 255);
+        runtime.SetLiquid(new WorldTileCoord(6, 5), (byte)LiquidKind.Water, 255);
+        runtime.SetLiquid(new WorldTileCoord(5, 6), (byte)LiquidKind.Water, 255);
+        runtime.SetLiquid(new WorldTileCoord(6, 6), (byte)LiquidKind.Water, 255);
+        runtime.Update(new FrameTime(TimeSpan.FromSeconds(1d / 60d), TimeSpan.FromSeconds(1d / 60d), false));
+        Assert.True(runtime.TryGetEntity(playerId, out var player));
+        Assert.Equal(EntityType.Player, player.Type);
+
+        var frame = overlay.Build(
+            runtime,
+            renderer,
+            camera,
+            FrameInput.Empty,
+            selectedTileId: 1);
+
+        Assert.Contains(frame.PanelLines, line => line.StartsWith("VELOCITY: ", StringComparison.Ordinal));
+        Assert.Contains("IN_LIQUID: YES", frame.PanelLines);
+        Assert.Contains(frame.PanelLines, line => line.StartsWith("SUBMERSION: ", StringComparison.Ordinal));
+        Assert.Contains("LIQUID_KIND: WATER", frame.PanelLines);
     }
 
     private static WorldRuntime CreateRuntime()

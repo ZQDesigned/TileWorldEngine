@@ -29,6 +29,19 @@ public sealed class WorldRuntimeLiquidTests
     }
 
     [Fact]
+    public void GetLiquidState_ReturnsNone_WhenCellHasNoLiquid()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+
+        var state = runtime.GetLiquidState(new WorldTileCoord(2, 2));
+
+        Assert.False(state.HasLiquid);
+        Assert.Equal(LiquidKind.None, state.Kind);
+        Assert.Equal((byte)0, state.Amount);
+    }
+
+    [Fact]
     public void Update_LiquidFallsDownward_WhenSpaceBelowIsOpen()
     {
         var runtime = CreateRuntime();

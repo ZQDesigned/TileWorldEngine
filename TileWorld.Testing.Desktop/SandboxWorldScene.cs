@@ -20,6 +20,7 @@ using TileWorld.Engine.Runtime.Events;
 using TileWorld.Engine.Runtime.Operations;
 using TileWorld.Engine.Storage;
 using TileWorld.Engine.World;
+using TileWorld.Engine.World.Cells;
 using TileWorld.Engine.World.Coordinates;
 using TileWorld.Engine.World.Objects;
 using TileWorld.Testing.Desktop.Rendering;
@@ -146,6 +147,11 @@ internal sealed class SandboxWorldScene : IEngineScene
         {
             EnsureSpawnAreaLoaded(_worldMetadata.SpawnTile);
             _playerEntityId = _worldRuntime.SpawnPlayer(new Float2(_worldMetadata.SpawnTile.X + 0.5f, _worldMetadata.SpawnTile.Y - 1.95f));
+        }
+
+        if (_isNewWorld)
+        {
+            CreateLiquidValidationArea(_worldMetadata.SpawnTile);
         }
 
         UpdateCameraFromPlayer();
@@ -486,6 +492,70 @@ internal sealed class SandboxWorldScene : IEngineScene
     private void EnsureSpawnAreaLoaded(Int2 spawnTile)
     {
         _worldRuntime.EnsureActiveAround(new WorldTileCoord(spawnTile.X, spawnTile.Y));
+    }
+
+    private void CreateLiquidValidationArea(Int2 spawnTile)
+    {
+        var basinTopY = spawnTile.Y + 2;
+        var basinBottomY = spawnTile.Y + 10;
+        var basinLeftX = spawnTile.X + 14;
+        var basinRightX = basinLeftX + 24;
+        var basinBounds = new RectI(
+            basinLeftX - 2,
+            basinTopY - 2,
+            (basinRightX - basinLeftX) + 5,
+            (basinBottomY - basinTopY) + 5);
+
+        _worldRuntime.EnsureActiveForTileArea(basinBounds, activePaddingInChunks: 1);
+
+        for (var worldX = basinLeftX; worldX <= basinRightX; worldX++)
+        {
+            _worldRuntime.SetForegroundTile(new WorldTileCoord(worldX, basinBottomY), StoneTileId);
+        }
+
+        for (var worldY = basinTopY; worldY <= basinBottomY; worldY++)
+        {
+            _worldRuntime.SetForegroundTile(new WorldTileCoord(basinLeftX, worldY), StoneTileId);
+            _worldRuntime.SetForegroundTile(new WorldTileCoord(basinRightX, worldY), StoneTileId);
+        }
+
+        var interiorLeftX = basinLeftX + 1;
+        var interiorRightX = basinRightX - 1;
+        var shallowZoneEndX = interiorLeftX + ((interiorRightX - interiorLeftX + 1) / 3);
+        var deepZoneEndX = interiorLeftX + (((interiorRightX - interiorLeftX + 1) * 2) / 3);
+
+        for (var worldY = basinTopY; worldY < basinBottomY; worldY++)
+        {
+            for (var worldX = interiorLeftX; worldX <= interiorRightX; worldX++)
+            {
+                var coord = new WorldTileCoord(worldX, worldY);
+                _worldRuntime.RemoveForegroundTile(coord);
+                _worldRuntime.RemoveLiquid(coord);
+            }
+        }
+
+        for (var worldX = interiorLeftX; worldX <= interiorRightX; worldX++)
+        {
+            if (worldX < shallowZoneEndX)
+            {
+                _worldRuntime.SetLiquid(new WorldTileCoord(worldX, basinBottomY - 1), liquidType: (byte)LiquidKind.Water, liquidAmount: 124);
+                continue;
+            }
+
+            if (worldX < deepZoneEndX)
+            {
+                _worldRuntime.SetLiquid(new WorldTileCoord(worldX, basinBottomY - 1), liquidType: (byte)LiquidKind.Water, liquidAmount: 255);
+                _worldRuntime.SetLiquid(new WorldTileCoord(worldX, basinBottomY - 2), liquidType: (byte)LiquidKind.Water, liquidAmount: 236);
+                _worldRuntime.SetLiquid(new WorldTileCoord(worldX, basinBottomY - 3), liquidType: (byte)LiquidKind.Water, liquidAmount: 188);
+                continue;
+            }
+
+            _worldRuntime.SetLiquid(new WorldTileCoord(worldX, basinBottomY - 1), liquidType: (byte)LiquidKind.Water, liquidAmount: 255);
+            _worldRuntime.SetLiquid(new WorldTileCoord(worldX, basinBottomY - 2), liquidType: (byte)LiquidKind.Water, liquidAmount: 148);
+        }
+
+        EngineDiagnostics.Info(
+            $"Sandbox liquid validation area created at X[{basinLeftX},{basinRightX}] Y[{basinTopY},{basinBottomY}] (shallow/deep/channel).");
     }
 
     private void LogInitializationSummary(WorldMetadata metadata)

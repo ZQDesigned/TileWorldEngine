@@ -5,6 +5,7 @@ using System.Linq;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Input;
 using TileWorld.Engine.Runtime;
+using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.World.Cells;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
@@ -87,6 +88,25 @@ public sealed class DebugOverlayRenderer
         var hoveredChunkLoaded = false;
         var hoveredLightLevel = (byte)0;
         var hoveredObjectLine = string.Empty;
+        var hasPlayer = false;
+        var playerVelocity = Float2.Zero;
+        var playerInLiquid = false;
+        var playerSubmersion = 0f;
+        var playerLiquidKind = LiquidKind.None;
+
+        var primaryPlayer = runtime
+            .EnumerateEntities()
+            .Where(static entity => entity.Type == EntityType.Player)
+            .OrderBy(static entity => entity.EntityId)
+            .FirstOrDefault();
+        if (primaryPlayer is not null)
+        {
+            hasPlayer = true;
+            playerVelocity = primaryPlayer.Velocity;
+            playerInLiquid = primaryPlayer.IsInLiquid;
+            playerSubmersion = primaryPlayer.Submersion;
+            playerLiquidKind = primaryPlayer.CurrentLiquidType;
+        }
 
         AddVisibleChunkHighlights(commands, runtime, worldRenderer, camera);
 
@@ -125,7 +145,12 @@ public sealed class DebugOverlayRenderer
             hoveredDirtyFlags,
             hoveredChunkLoaded,
             hoveredLightLevel,
-            hoveredObjectLine);
+            hoveredObjectLine,
+            hasPlayer,
+            playerVelocity,
+            playerInLiquid,
+            playerSubmersion,
+            playerLiquidKind);
 
         AddPanel(commands, panelLines);
 
@@ -226,7 +251,12 @@ public sealed class DebugOverlayRenderer
         ChunkDirtyFlags hoveredDirtyFlags,
         bool hoveredChunkLoaded,
         byte hoveredLightLevel,
-        string hoveredObjectLine)
+        string hoveredObjectLine,
+        bool hasPlayer,
+        Float2 playerVelocity,
+        bool playerInLiquid,
+        float playerSubmersion,
+        LiquidKind playerLiquidKind)
     {
         var effectiveSelectionLabel = !string.IsNullOrWhiteSpace(selectionLabel)
             ? selectionLabel
@@ -240,6 +270,15 @@ public sealed class DebugOverlayRenderer
             $"CAMERA: {camera.PositionPixels.X.ToString(CultureInfo.InvariantCulture)},{camera.PositionPixels.Y.ToString(CultureInfo.InvariantCulture)}",
             $"PERSISTENCE: {(runtime.IsPersistenceEnabled ? "ON" : "OFF")}"
         };
+
+        if (hasPlayer)
+        {
+            lines.Add(
+                $"VELOCITY: {playerVelocity.X.ToString("0.00", CultureInfo.InvariantCulture)},{playerVelocity.Y.ToString("0.00", CultureInfo.InvariantCulture)}");
+            lines.Add($"IN_LIQUID: {(playerInLiquid ? "YES" : "NO")}");
+            lines.Add($"SUBMERSION: {playerSubmersion.ToString("0.00", CultureInfo.InvariantCulture)}");
+            lines.Add($"LIQUID_KIND: {FormatLiquidKind(playerLiquidKind)}");
+        }
 
         if (hoveredTileCoord is not { } tileCoord ||
             hoveredChunkCoord is not { } chunkCoord ||
@@ -404,6 +443,17 @@ public sealed class DebugOverlayRenderer
         return dirtyFlags == ChunkDirtyFlags.None
             ? "NONE"
             : dirtyFlags.ToString().ToUpperInvariant();
+    }
+
+    private static string FormatLiquidKind(LiquidKind liquidKind)
+    {
+        return liquidKind switch
+        {
+            LiquidKind.Water => "WATER",
+            LiquidKind.Lava => "LAVA",
+            LiquidKind.Honey => "HONEY",
+            _ => "NONE"
+        };
     }
 
     private static RectI InsetRect(RectI rect, int insetPixels)

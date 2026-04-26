@@ -6,6 +6,8 @@ using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Runtime.Events;
 using TileWorld.Engine.Runtime.Queries;
+using TileWorld.Engine.World.Cells;
+using TileWorld.Engine.World.Coordinates;
 
 namespace TileWorld.Engine.Runtime.Entities;
 
@@ -21,11 +23,35 @@ public sealed class EntityManager
     private const float PlayerRunSpeedTilesPerSecond = 6f;
     private const float PlayerJumpVelocityTilesPerSecond = -9.5f;
     private const float PlayerGravityTilesPerSecondSquared = 28f;
+    private const float PlayerSwimStrokeImpulseTilesPerSecond = -6.2f;
     private const float DropGravityTilesPerSecondSquared = 24f;
     private const float DropGroundDamping = 0.8f;
+    private const float MinSubmersionThreshold = 0.001f;
     private const byte DefaultPlayerLightLevel = 8;
+    private static readonly LiquidMotionParameters WaterMotionParameters = new(
+        HorizontalSpeedMultiplier: 0.78f,
+        HorizontalDamping: 0.86f,
+        VerticalDamping: 0.92f,
+        GravityScale: 0.50f,
+        BuoyancyStrength: 12.0f,
+        JumpScale: 0.58f);
+    private static readonly LiquidMotionParameters LavaMotionParameters = new(
+        HorizontalSpeedMultiplier: 0.62f,
+        HorizontalDamping: 0.80f,
+        VerticalDamping: 0.85f,
+        GravityScale: 0.64f,
+        BuoyancyStrength: 8.0f,
+        JumpScale: 0.45f);
+    private static readonly LiquidMotionParameters HoneyMotionParameters = new(
+        HorizontalSpeedMultiplier: 0.42f,
+        HorizontalDamping: 0.68f,
+        VerticalDamping: 0.72f,
+        GravityScale: 0.45f,
+        BuoyancyStrength: 5.0f,
+        JumpScale: 0.35f);
     private readonly TileCollisionService _collisionService;
     private readonly ContentRegistry _contentRegistry;
+    private readonly WorldQueryService _queryService;
     private readonly Dictionary<int, Entity> _entities = new();
     private readonly Dictionary<int, byte> _entityLightLevels = new();
     private readonly WorldEventBus _eventBus;
@@ -44,6 +70,7 @@ public sealed class EntityManager
     {
         _collisionService = collisionService;
         _contentRegistry = contentRegistry;
+        _queryService = collisionService.QueryService;
         _eventBus = eventBus;
     }
 
@@ -311,6 +338,8 @@ public sealed class EntityManager
 
         foreach (var entity in _entities.Values)
         {
+            SampleLiquidState(entity);
+
             switch (entity.Type)
             {
                 case EntityType.Player:
@@ -320,6 +349,8 @@ public sealed class EntityManager
                     UpdateDrop(entity, deltaSeconds);
                     break;
             }
+
+            SampleLiquidState(entity);
         }
 
         ResolveDropCollection();
@@ -348,15 +379,47 @@ public sealed class EntityManager
         var previousPosition = entity.Position;
         var previousVelocity = entity.Velocity;
         var previousStateFlags = entity.StateFlags;
-        entity.Velocity = entity.Velocity with { X = inputState.MoveAxis * PlayerRunSpeedTilesPerSecond };
-
-        if (inputState.JumpRequested && (entity.StateFlags & EntityStateFlags.Grounded) != 0)
+        var liquidParameters = ResolveLiquidMotionParameters(entity.CurrentLiquidType);
+        var horizontalSpeedMultiplier = entity.IsInLiquid
+            ? liquidParameters.HorizontalSpeedMultiplier
+            : 1f;
+        var horizontalVelocity = inputState.MoveAxis * PlayerRunSpeedTilesPerSecond * horizontalSpeedMultiplier;
+        if (entity.IsInLiquid &&
+            MathF.Abs(inputState.MoveAxis) < 0.001f)
         {
-            entity.Velocity = entity.Velocity with { Y = PlayerJumpVelocityTilesPerSecond };
-            entity.StateFlags &= ~EntityStateFlags.Grounded;
+            horizontalVelocity = entity.Velocity.X * liquidParameters.HorizontalDamping;
         }
 
-        entity.Velocity = entity.Velocity with { Y = entity.Velocity.Y + (PlayerGravityTilesPerSecondSquared * deltaSeconds) };
+        var verticalVelocity = entity.Velocity.Y;
+        if (inputState.JumpRequested)
+        {
+            if ((entity.StateFlags & EntityStateFlags.Grounded) != 0)
+            {
+                verticalVelocity = PlayerJumpVelocityTilesPerSecond * (entity.IsInLiquid ? liquidParameters.JumpScale : 1f);
+                entity.StateFlags &= ~EntityStateFlags.Grounded;
+            }
+            else if (entity.IsInLiquid)
+            {
+                var swimTargetVelocity = PlayerSwimStrokeImpulseTilesPerSecond * liquidParameters.JumpScale;
+                if (verticalVelocity > swimTargetVelocity)
+                {
+                    verticalVelocity = swimTargetVelocity;
+                }
+            }
+        }
+
+        if (entity.IsInLiquid)
+        {
+            var verticalAcceleration = (PlayerGravityTilesPerSecondSquared * liquidParameters.GravityScale) -
+                                       (liquidParameters.BuoyancyStrength * entity.Submersion);
+            verticalVelocity = (verticalVelocity + (verticalAcceleration * deltaSeconds)) * liquidParameters.VerticalDamping;
+        }
+        else
+        {
+            verticalVelocity += PlayerGravityTilesPerSecondSquared * deltaSeconds;
+        }
+
+        entity.Velocity = new Float2(horizontalVelocity, verticalVelocity);
         _collisionService.MoveAndCollide(entity, entity.Velocity * deltaSeconds);
         _playerInputStates[entity.EntityId] = inputState with { JumpRequested = false };
         TrackPersistenceMutation(entity, previousPosition, previousVelocity, previousStateFlags);
@@ -367,7 +430,21 @@ public sealed class EntityManager
         var previousPosition = entity.Position;
         var previousVelocity = entity.Velocity;
         var previousStateFlags = entity.StateFlags;
-        entity.Velocity = entity.Velocity with { Y = entity.Velocity.Y + (DropGravityTilesPerSecondSquared * deltaSeconds) };
+
+        if (entity.IsInLiquid)
+        {
+            var liquidParameters = ResolveLiquidMotionParameters(entity.CurrentLiquidType);
+            var verticalAcceleration = (DropGravityTilesPerSecondSquared * liquidParameters.GravityScale) -
+                                       (liquidParameters.BuoyancyStrength * 0.85f * entity.Submersion);
+            entity.Velocity = new Float2(
+                entity.Velocity.X * liquidParameters.HorizontalDamping,
+                (entity.Velocity.Y + (verticalAcceleration * deltaSeconds)) * liquidParameters.VerticalDamping);
+        }
+        else
+        {
+            entity.Velocity = entity.Velocity with { Y = entity.Velocity.Y + (DropGravityTilesPerSecondSquared * deltaSeconds) };
+        }
+
         _collisionService.MoveAndCollide(entity, entity.Velocity * deltaSeconds);
 
         if ((entity.StateFlags & EntityStateFlags.Grounded) != 0)
@@ -420,6 +497,122 @@ public sealed class EntityManager
             _playerInputStates.Remove(entityId);
             MarkPersistenceDirty();
         }
+    }
+
+    private void SampleLiquidState(Entity entity)
+    {
+        var bounds = entity.WorldBounds;
+        var entityArea = bounds.Width * bounds.Height;
+        if (entityArea <= 0f)
+        {
+            entity.IsInLiquid = false;
+            entity.Submersion = 0f;
+            entity.CurrentLiquidType = LiquidKind.None;
+            return;
+        }
+
+        var minTileX = (int)MathF.Floor(bounds.Left + 0.0001f);
+        var maxTileX = (int)MathF.Floor(bounds.Right - 0.0001f);
+        var minTileY = (int)MathF.Floor(bounds.Top + 0.0001f);
+        var maxTileY = (int)MathF.Floor(bounds.Bottom - 0.0001f);
+
+        var liquidAreaByType = new Dictionary<LiquidKind, float>();
+        var accumulatedLiquidArea = 0f;
+
+        for (var tileY = minTileY; tileY <= maxTileY; tileY++)
+        {
+            for (var tileX = minTileX; tileX <= maxTileX; tileX++)
+            {
+                var coord = new WorldTileCoord(tileX, tileY);
+                if (!_queryService.IsWithinWorldBounds(coord))
+                {
+                    continue;
+                }
+
+                var cell = _queryService.GetCell(coord);
+                if (cell.LiquidAmount == 0 || cell.LiquidType == 0 || _queryService.IsSolid(coord))
+                {
+                    continue;
+                }
+
+                var overlapArea = ComputeLiquidOverlapArea(bounds, tileX, tileY, cell.LiquidAmount);
+                if (overlapArea <= 0f)
+                {
+                    continue;
+                }
+
+                var liquidKind = cell.LiquidType switch
+                {
+                    (byte)LiquidKind.Water => LiquidKind.Water,
+                    (byte)LiquidKind.Lava => LiquidKind.Lava,
+                    (byte)LiquidKind.Honey => LiquidKind.Honey,
+                    _ => LiquidKind.Water
+                };
+                liquidAreaByType[liquidKind] = liquidAreaByType.GetValueOrDefault(liquidKind) + overlapArea;
+                accumulatedLiquidArea += overlapArea;
+            }
+        }
+
+        if (accumulatedLiquidArea <= 0f)
+        {
+            entity.IsInLiquid = false;
+            entity.Submersion = 0f;
+            entity.CurrentLiquidType = LiquidKind.None;
+            return;
+        }
+
+        var dominantLiquidKind = liquidAreaByType
+            .OrderByDescending(static entry => entry.Value)
+            .ThenBy(static entry => (int)entry.Key)
+            .First()
+            .Key;
+
+        entity.IsInLiquid = true;
+        entity.Submersion = Math.Clamp(accumulatedLiquidArea / entityArea, 0f, 1f);
+        entity.CurrentLiquidType = dominantLiquidKind;
+
+        if (entity.Submersion < MinSubmersionThreshold)
+        {
+            entity.IsInLiquid = false;
+            entity.Submersion = 0f;
+            entity.CurrentLiquidType = LiquidKind.None;
+        }
+    }
+
+    private static float ComputeLiquidOverlapArea(AabbF bounds, int tileX, int tileY, byte liquidAmount)
+    {
+        var fillHeight = Math.Clamp(liquidAmount / 255f, 0f, 1f);
+        if (fillHeight <= 0f)
+        {
+            return 0f;
+        }
+
+        var liquidLeft = tileX;
+        var liquidRight = tileX + 1f;
+        var liquidBottom = tileY + 1f;
+        var liquidTop = liquidBottom - fillHeight;
+
+        var overlapLeft = MathF.Max(bounds.Left, liquidLeft);
+        var overlapTop = MathF.Max(bounds.Top, liquidTop);
+        var overlapRight = MathF.Min(bounds.Right, liquidRight);
+        var overlapBottom = MathF.Min(bounds.Bottom, liquidBottom);
+        if (overlapRight <= overlapLeft || overlapBottom <= overlapTop)
+        {
+            return 0f;
+        }
+
+        return (overlapRight - overlapLeft) * (overlapBottom - overlapTop);
+    }
+
+    private static LiquidMotionParameters ResolveLiquidMotionParameters(LiquidKind liquidKind)
+    {
+        return liquidKind switch
+        {
+            LiquidKind.Water => WaterMotionParameters,
+            LiquidKind.Lava => LavaMotionParameters,
+            LiquidKind.Honey => HoneyMotionParameters,
+            _ => WaterMotionParameters
+        };
     }
 
     private void AddEntity(Entity entity, bool publishSpawnEvents, bool markPersistenceDirty)
@@ -490,6 +683,14 @@ public sealed class EntityManager
     {
         return (entity.StateFlags & EntityStateFlags.PendingRemoval) == 0;
     }
+
+    private readonly record struct LiquidMotionParameters(
+        float HorizontalSpeedMultiplier,
+        float HorizontalDamping,
+        float VerticalDamping,
+        float GravityScale,
+        float BuoyancyStrength,
+        float JumpScale);
 
     private readonly record struct PlayerInputState(float MoveAxis, bool JumpRequested);
 }

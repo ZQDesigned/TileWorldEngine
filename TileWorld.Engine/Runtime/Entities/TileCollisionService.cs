@@ -27,6 +27,11 @@ internal sealed class TileCollisionService
     }
 
     /// <summary>
+    /// Gets the underlying world query service used by collision resolution.
+    /// </summary>
+    internal WorldQueryService QueryService => _worldQueryService;
+
+    /// <summary>
     /// Moves an entity by a proposed delta while resolving collisions against solid foreground tiles.
     /// </summary>
     /// <param name="entity">The entity to move.</param>

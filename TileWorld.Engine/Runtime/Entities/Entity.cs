@@ -1,4 +1,5 @@
 using TileWorld.Engine.Core.Math;
+using TileWorld.Engine.World.Cells;
 
 namespace TileWorld.Engine.Runtime.Entities;
 
@@ -46,6 +47,30 @@ public sealed class Entity
     /// Gets or sets the carried amount associated with this entity when it represents a world drop.
     /// </summary>
     public int Amount { get; set; } = 1;
+
+    /// <summary>
+    /// Gets a value indicating whether this entity is currently submerged in liquid.
+    /// </summary>
+    /// <remarks>
+    /// This value is runtime-derived and is not persisted to disk.
+    /// </remarks>
+    public bool IsInLiquid { get; internal set; }
+
+    /// <summary>
+    /// Gets the current liquid submersion ratio in the range <c>0..1</c>.
+    /// </summary>
+    /// <remarks>
+    /// This value is runtime-derived and is not persisted to disk.
+    /// </remarks>
+    public float Submersion { get; internal set; }
+
+    /// <summary>
+    /// Gets the dominant liquid type currently intersecting this entity.
+    /// </summary>
+    /// <remarks>
+    /// This value is runtime-derived and is not persisted to disk.
+    /// </remarks>
+    public LiquidKind CurrentLiquidType { get; internal set; }
 
     /// <summary>
     /// Gets the entity bounds in world tile units.

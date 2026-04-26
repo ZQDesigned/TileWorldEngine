@@ -6,6 +6,7 @@ using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Input;
 using TileWorld.Engine.Runtime;
 using TileWorld.Engine.Runtime.Entities;
+using TileWorld.Engine.Runtime.Queries;
 using TileWorld.Engine.World.Cells;
 using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
@@ -87,6 +88,7 @@ public sealed class DebugOverlayRenderer
         var hoveredDirtyFlags = ChunkDirtyFlags.None;
         var hoveredChunkLoaded = false;
         var hoveredLightLevel = (byte)0;
+        var hoveredMovementBlocker = MovementBlockerKind.None;
         var hoveredObjectLine = string.Empty;
         var hasPlayer = false;
         var playerVelocity = Float2.Zero;
@@ -120,6 +122,7 @@ public sealed class DebugOverlayRenderer
                 ? hoveredBiomeDef.Name.ToUpperInvariant()
                 : "UNKNOWN";
             hoveredLightLevel = runtime.GetLightLevel(tileCoord);
+            hoveredMovementBlocker = runtime.QueryService.GetMovementBlocker(tileCoord, EntityType.Player);
             hoveredChunkLoaded = runtime.WorldData.TryGetChunk(hoveredChunkCoord.Value, out var hoveredChunk);
             hoveredDirtyFlags = hoveredChunkLoaded ? hoveredChunk.DirtyFlags : ChunkDirtyFlags.None;
             if (runtime.QueryService.TryGetObjectAt(tileCoord, out var hoveredObject) &&
@@ -145,6 +148,7 @@ public sealed class DebugOverlayRenderer
             hoveredDirtyFlags,
             hoveredChunkLoaded,
             hoveredLightLevel,
+            hoveredMovementBlocker,
             hoveredObjectLine,
             hasPlayer,
             playerVelocity,
@@ -251,6 +255,7 @@ public sealed class DebugOverlayRenderer
         ChunkDirtyFlags hoveredDirtyFlags,
         bool hoveredChunkLoaded,
         byte hoveredLightLevel,
+        MovementBlockerKind hoveredMovementBlocker,
         string hoveredObjectLine,
         bool hasPlayer,
         Float2 playerVelocity,
@@ -293,6 +298,7 @@ public sealed class DebugOverlayRenderer
         lines.Add($"LOCAL: {localCoord.X.ToString(CultureInfo.InvariantCulture)},{localCoord.Y.ToString(CultureInfo.InvariantCulture)}");
         lines.Add($"BIOME: {hoveredBiomeId.ToString(CultureInfo.InvariantCulture)} {hoveredBiomeName}");
         lines.Add($"LIGHT: {hoveredLightLevel.ToString(CultureInfo.InvariantCulture)}");
+        lines.Add($"BLOCKED BY: {FormatMovementBlocker(hoveredMovementBlocker)}");
         lines.Add($"FG TILE: {hoveredCell.ForegroundTileId.ToString(CultureInfo.InvariantCulture)}");
         lines.Add(
             $"VARIANT: {hoveredCell.Variant.ToString(CultureInfo.InvariantCulture)} FLAGS: {hoveredCell.Flags.ToString(CultureInfo.InvariantCulture)}");
@@ -453,6 +459,17 @@ public sealed class DebugOverlayRenderer
             LiquidKind.Lava => "LAVA",
             LiquidKind.Honey => "HONEY",
             _ => "NONE"
+        };
+    }
+
+    private static string FormatMovementBlocker(MovementBlockerKind movementBlocker)
+    {
+        return movementBlocker switch
+        {
+            MovementBlockerKind.None => "NONE",
+            MovementBlockerKind.Tile => "TILE",
+            MovementBlockerKind.Object => "OBJECT",
+            _ => "UNKNOWN"
         };
     }
 

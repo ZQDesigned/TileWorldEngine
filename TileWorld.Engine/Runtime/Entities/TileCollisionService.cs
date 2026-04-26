@@ -6,7 +6,7 @@ using TileWorld.Engine.World.Coordinates;
 namespace TileWorld.Engine.Runtime.Entities;
 
 /// <summary>
-/// Performs simple axis-aligned collision resolution between entities and solid tiles.
+/// Performs simple axis-aligned collision resolution between entities and world movement blockers.
 /// </summary>
 /// <remarks>
 /// Engine internal infrastructure API. External callers should prefer <see cref="Runtime.WorldRuntime"/> and let
@@ -32,7 +32,7 @@ internal sealed class TileCollisionService
     internal WorldQueryService QueryService => _worldQueryService;
 
     /// <summary>
-    /// Moves an entity by a proposed delta while resolving collisions against solid foreground tiles.
+    /// Moves an entity by a proposed delta while resolving collisions against blocking foreground tiles and objects.
     /// </summary>
     /// <param name="entity">The entity to move.</param>
     /// <param name="delta">The proposed movement delta in tile units.</param>
@@ -64,7 +64,7 @@ internal sealed class TileCollisionService
 
             for (var tileY = minTileY; tileY <= maxTileY; tileY++)
             {
-                if (!_worldQueryService.IsSolid(new WorldTileCoord(tileX, tileY)))
+                if (!_worldQueryService.IsMovementBlocked(new WorldTileCoord(tileX, tileY), entity.Type))
                 {
                     continue;
                 }
@@ -83,7 +83,7 @@ internal sealed class TileCollisionService
 
             for (var tileY = minTileY; tileY <= maxTileY; tileY++)
             {
-                if (!_worldQueryService.IsSolid(new WorldTileCoord(tileX, tileY)))
+                if (!_worldQueryService.IsMovementBlocked(new WorldTileCoord(tileX, tileY), entity.Type))
                 {
                     continue;
                 }
@@ -129,7 +129,7 @@ internal sealed class TileCollisionService
 
             for (var tileX = minTileX; tileX <= maxTileX; tileX++)
             {
-                if (!_worldQueryService.IsSolid(new WorldTileCoord(tileX, tileY)))
+                if (!_worldQueryService.IsMovementBlocked(new WorldTileCoord(tileX, tileY), entity.Type))
                 {
                     continue;
                 }
@@ -149,7 +149,7 @@ internal sealed class TileCollisionService
 
             for (var tileX = minTileX; tileX <= maxTileX; tileX++)
             {
-                if (!_worldQueryService.IsSolid(new WorldTileCoord(tileX, tileY)))
+                if (!_worldQueryService.IsMovementBlocked(new WorldTileCoord(tileX, tileY), entity.Type))
                 {
                     continue;
                 }

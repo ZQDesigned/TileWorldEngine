@@ -425,6 +425,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             Name = "Crate",
             SizeInTiles = new Int2(2, 2),
             RequiresSupport = true,
+            MovementCollisionMode = MovementCollisionMode.Solid,
             BreakDropItemId = CrateItemId,
             Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.CrateObjectRect, ColorRgba32.White, false)
         });
@@ -434,6 +435,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             Name = "Bench",
             SizeInTiles = new Int2(3, 2),
             RequiresSupport = true,
+            MovementCollisionMode = MovementCollisionMode.Solid,
             BreakDropItemId = BenchItemId,
             Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.BenchObjectRect, ColorRgba32.White, false)
         });
@@ -443,6 +445,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             Name = "Lamp",
             SizeInTiles = new Int2(1, 3),
             RequiresSupport = true,
+            MovementCollisionMode = MovementCollisionMode.Solid,
             BreakDropItemId = LampItemId,
             EmissiveLight = 14,
             Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.LampObjectRect, ColorRgba32.White, false)

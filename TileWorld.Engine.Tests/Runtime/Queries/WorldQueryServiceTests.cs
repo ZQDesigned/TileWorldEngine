@@ -1,7 +1,12 @@
+using TileWorld.Engine.Content.Objects;
 using TileWorld.Engine.Content.Registry;
 using TileWorld.Engine.Content.Tiles;
+using TileWorld.Engine.Content.Walls;
+using TileWorld.Engine.Runtime;
 using TileWorld.Engine.Runtime.Chunks;
 using TileWorld.Engine.Runtime.Contexts;
+using TileWorld.Engine.Runtime.Entities;
+using TileWorld.Engine.Runtime.Operations;
 using TileWorld.Engine.Runtime.Queries;
 using TileWorld.Engine.Storage;
 using TileWorld.Engine.Tests.Storage;
@@ -108,12 +113,92 @@ public sealed class WorldQueryServiceTests
         Assert.Equal(8, queryService.EnumerateNeighbors8(new WorldTileCoord(10, 10)).Count());
     }
 
+    [Fact]
+    public void MovementBlocking_ReportsTileObjectAndNone()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+        runtime.SetForegroundTile(new WorldTileCoord(0, 0), 1);
+        var objectResult = runtime.PlaceObject(
+            new WorldTileCoord(2, 0),
+            100,
+            new ObjectPlacementContext { Source = PlacementSource.DebugTool });
+
+        Assert.True(objectResult.Success);
+        Assert.Equal(MovementBlockerKind.Tile, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(0, 0), EntityType.Player));
+        Assert.Equal(MovementBlockerKind.Object, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(2, 0), EntityType.Player));
+        Assert.Equal(MovementBlockerKind.None, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(10, 10), EntityType.Player));
+    }
+
+    [Fact]
+    public void MovementBlocking_UsesCollisionMask()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+        var objectResult = runtime.PlaceObject(
+            new WorldTileCoord(0, 0),
+            101,
+            new ObjectPlacementContext { Source = PlacementSource.DebugTool });
+
+        Assert.True(objectResult.Success);
+        Assert.Equal(MovementBlockerKind.Object, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(0, 0), EntityType.Player));
+        Assert.Equal(MovementBlockerKind.None, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(1, 0), EntityType.Player));
+        Assert.Equal(MovementBlockerKind.None, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(0, 1), EntityType.Player));
+        Assert.Equal(MovementBlockerKind.Object, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(1, 1), EntityType.Player));
+    }
+
+    [Fact]
+    public void MovementBlocking_StaysContinuousAcrossChunkBoundary()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+        var objectResult = runtime.PlaceObject(
+            new WorldTileCoord(31, 0),
+            102,
+            new ObjectPlacementContext { Source = PlacementSource.DebugTool });
+
+        Assert.True(objectResult.Success);
+        Assert.Equal(MovementBlockerKind.Object, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(31, 0), EntityType.Player));
+        Assert.Equal(MovementBlockerKind.Object, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(32, 0), EntityType.Player));
+    }
+
+    [Fact]
+    public void MovementBlocking_RemovingObjectClearsBlocking()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+        var objectResult = runtime.PlaceObject(
+            new WorldTileCoord(5, 0),
+            100,
+            new ObjectPlacementContext { Source = PlacementSource.DebugTool });
+
+        Assert.True(objectResult.Success);
+        Assert.Equal(MovementBlockerKind.Object, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(5, 0), EntityType.Player));
+        Assert.True(runtime.RemoveObject(objectResult.ObjectInstanceId));
+        Assert.Equal(MovementBlockerKind.None, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(5, 0), EntityType.Player));
+    }
+
+    [Fact]
+    public void MovementBlocking_BackgroundWallDoesNotBlock()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+
+        Assert.True(runtime.SetBackgroundWall(new WorldTileCoord(8, 8), 1));
+        Assert.Equal(MovementBlockerKind.None, runtime.QueryService.GetMovementBlocker(new WorldTileCoord(8, 8), EntityType.Player));
+    }
+
     private static WorldQueryService CreateFixture(out WorldData worldData, out ContentRegistry registry)
     {
         registry = CreateRegistry();
 
         worldData = new WorldData(new WorldMetadata());
         return new WorldQueryService(worldData, registry);
+    }
+
+    private static WorldRuntime CreateRuntime()
+    {
+        return new WorldRuntime(new WorldData(new WorldMetadata()), CreateRegistry());
     }
 
     private static ContentRegistry CreateRegistry()
@@ -129,6 +214,36 @@ public sealed class WorldQueryServiceTests
             CanBeMined = true,
             Hardness = 1,
             AutoTileGroupId = 1
+        });
+        registry.RegisterWall(new WallDef
+        {
+            Id = 1,
+            Name = "Stone Wall"
+        });
+        registry.RegisterObject(new ObjectDef
+        {
+            Id = 100,
+            Name = "Crate",
+            SizeInTiles = new TileWorld.Engine.Core.Math.Int2(2, 2),
+            RequiresSupport = false,
+            MovementCollisionMode = MovementCollisionMode.Solid
+        });
+        registry.RegisterObject(new ObjectDef
+        {
+            Id = 101,
+            Name = "Mask Object",
+            SizeInTiles = new TileWorld.Engine.Core.Math.Int2(2, 2),
+            RequiresSupport = false,
+            MovementCollisionMode = MovementCollisionMode.Solid,
+            CollisionTileMask = [true, false, false, true]
+        });
+        registry.RegisterObject(new ObjectDef
+        {
+            Id = 102,
+            Name = "Boundary Object",
+            SizeInTiles = new TileWorld.Engine.Core.Math.Int2(2, 1),
+            RequiresSupport = false,
+            MovementCollisionMode = MovementCollisionMode.Solid
         });
 
         return registry;

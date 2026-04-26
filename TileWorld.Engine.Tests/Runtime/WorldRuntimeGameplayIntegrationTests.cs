@@ -182,6 +182,52 @@ public sealed class WorldRuntimeGameplayIntegrationTests
     }
 
     [Fact]
+    public void PlayerPhysics_SolidObjectBlocksHorizontalTraversal()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+        SeedSupportFloor(runtime, -2, 8, 2);
+        var objectResult = runtime.PlaceObject(
+            new WorldTileCoord(2, 0),
+            100,
+            new ObjectPlacementContext { Source = PlacementSource.DebugTool });
+        var playerId = runtime.SpawnPlayer(new Float2(0.1f, 0.05f));
+
+        runtime.SetPlayerInput(playerId, 1f, jumpRequested: false);
+        for (var frame = 0; frame < 120; frame++)
+        {
+            runtime.Update(new FrameTime(TimeSpan.FromSeconds(frame / 60d), TimeSpan.FromSeconds(1d / 60d), false));
+        }
+
+        Assert.True(objectResult.Success);
+        Assert.True(runtime.TryGetEntity(playerId, out var player));
+        Assert.True(player.Position.X < 1.2f, $"Expected player to be blocked by object, actual X={player.Position.X:0.000}.");
+    }
+
+    [Fact]
+    public void PlayerPhysics_NonBlockingObjectAllowsHorizontalTraversal()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+        SeedSupportFloor(runtime, -2, 8, 2);
+        var objectResult = runtime.PlaceObject(
+            new WorldTileCoord(2, 0),
+            103,
+            new ObjectPlacementContext { Source = PlacementSource.DebugTool });
+        var playerId = runtime.SpawnPlayer(new Float2(0.1f, 0.05f));
+
+        runtime.SetPlayerInput(playerId, 1f, jumpRequested: false);
+        for (var frame = 0; frame < 120; frame++)
+        {
+            runtime.Update(new FrameTime(TimeSpan.FromSeconds(frame / 60d), TimeSpan.FromSeconds(1d / 60d), false));
+        }
+
+        Assert.True(objectResult.Success);
+        Assert.True(runtime.TryGetEntity(playerId, out var player));
+        Assert.True(player.Position.X > 2.2f, $"Expected player to pass through non-blocking object, actual X={player.Position.X:0.000}.");
+    }
+
+    [Fact]
     public void SpawnedDrop_UsesCenteredBoundsWithinSourceTile()
     {
         var runtime = CreateRuntime();
@@ -297,7 +343,16 @@ public sealed class WorldRuntimeGameplayIntegrationTests
             Name = "Crate",
             SizeInTiles = new Int2(2, 2),
             RequiresSupport = true,
-            BreakDropItemId = 2001
+            BreakDropItemId = 2001,
+            MovementCollisionMode = MovementCollisionMode.Solid
+        });
+        registry.RegisterObject(new ObjectDef
+        {
+            Id = 103,
+            Name = "Banner",
+            SizeInTiles = new Int2(2, 2),
+            RequiresSupport = true,
+            MovementCollisionMode = MovementCollisionMode.None
         });
 
         return registry;

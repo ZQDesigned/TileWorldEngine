@@ -7,6 +7,7 @@ using TileWorld.Engine.Content.Walls;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Runtime.Chunks;
 using TileWorld.Engine.Runtime.Contexts;
+using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.Runtime.Objects;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Cells;
@@ -177,6 +178,35 @@ internal sealed class WorldQueryService
     }
 
     /// <summary>
+    /// Returns whether movement is blocked at a world-tile coordinate for the supplied entity type.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <param name="entityType">The traversing entity type.</param>
+    /// <returns><see langword="true"/> when movement is blocked by a tile or object.</returns>
+    public bool IsMovementBlocked(WorldTileCoord coord, EntityType entityType)
+    {
+        return GetMovementBlocker(coord, entityType) != MovementBlockerKind.None;
+    }
+
+    /// <summary>
+    /// Resolves the layer that blocks movement at a world-tile coordinate for the supplied entity type.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <param name="entityType">The traversing entity type.</param>
+    /// <returns>The blocking layer kind.</returns>
+    public MovementBlockerKind GetMovementBlocker(WorldTileCoord coord, EntityType entityType)
+    {
+        if (TryGetForegroundTileDef(coord, out var tileDef) && tileDef.IsSolid)
+        {
+            return MovementBlockerKind.Tile;
+        }
+
+        return IsObjectMovementBlocking(coord, entityType)
+            ? MovementBlockerKind.Object
+            : MovementBlockerKind.None;
+    }
+
+    /// <summary>
     /// Returns whether the foreground tile at the coordinate is air.
     /// </summary>
     /// <param name="coord">The world-tile coordinate to inspect.</param>
@@ -328,6 +358,56 @@ internal sealed class WorldQueryService
     public Int2 ToLocalCoord(WorldTileCoord coord)
     {
         return WorldCoordinateConverter.ToLocalCoord(coord);
+    }
+
+    private bool IsObjectMovementBlocking(WorldTileCoord coord, EntityType entityType)
+    {
+        if (_objectManager is null ||
+            !_objectManager.TryGetObjectAt(coord, out var objectInstance) ||
+            !_contentRegistry.TryGetObjectDef(objectInstance.ObjectDefId, out var objectDef))
+        {
+            return false;
+        }
+
+        _ = entityType;
+        return objectDef.MovementCollisionMode switch
+        {
+            MovementCollisionMode.None => false,
+            MovementCollisionMode.Solid => IsBlockingMaskCell(objectDef, objectInstance, coord),
+            MovementCollisionMode.TopOnly => IsBlockingMaskCell(objectDef, objectInstance, coord),
+            _ => IsBlockingMaskCell(objectDef, objectInstance, coord)
+        };
+    }
+
+    private bool IsBlockingMaskCell(ObjectDef objectDef, ObjectInstance objectInstance, WorldTileCoord coord)
+    {
+        if (objectDef.CollisionTileMask is not { Length: > 0 } collisionMask)
+        {
+            return true;
+        }
+
+        var footprintWidth = objectDef.SizeInTiles.X;
+        var footprintHeight = objectDef.SizeInTiles.Y;
+        if (footprintWidth <= 0 || footprintHeight <= 0)
+        {
+            return false;
+        }
+
+        var requiredCellCount = footprintWidth * footprintHeight;
+        if (collisionMask.Length < requiredCellCount)
+        {
+            return true;
+        }
+
+        var footprintOrigin = _objectManager!.GetFootprintOrigin(objectInstance.AnchorCoord, objectDef);
+        var localX = coord.X - footprintOrigin.X;
+        var localY = coord.Y - footprintOrigin.Y;
+        if (localX < 0 || localX >= footprintWidth || localY < 0 || localY >= footprintHeight)
+        {
+            return false;
+        }
+
+        return collisionMask[(localY * footprintWidth) + localX];
     }
 
     private bool TryResolveChunk(

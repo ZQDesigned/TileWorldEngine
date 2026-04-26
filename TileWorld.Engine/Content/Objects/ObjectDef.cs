@@ -39,6 +39,22 @@ public sealed class ObjectDef
     public bool RequiresSupport { get; init; }
 
     /// <summary>
+    /// Gets the movement-collision behavior used when entities traverse object-occupied tiles.
+    /// </summary>
+    /// <remarks>
+    /// The default value keeps existing placed furniture behavior deterministic by treating objects as blocking.
+    /// </remarks>
+    public MovementCollisionMode MovementCollisionMode { get; init; } = MovementCollisionMode.Solid;
+
+    /// <summary>
+    /// Gets the optional per-tile collision mask in footprint-local row-major order.
+    /// </summary>
+    /// <remarks>
+    /// When omitted, solid collision modes block the entire object footprint.
+    /// </remarks>
+    public bool[] CollisionTileMask { get; init; }
+
+    /// <summary>
     /// Gets the item definition identifier spawned when the object is destroyed. A value of <c>0</c> disables drops.
     /// </summary>
     public int BreakDropItemId { get; init; }

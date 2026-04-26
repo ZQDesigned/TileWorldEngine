@@ -43,7 +43,7 @@ public sealed class TileEditServiceTests
 
         Assert.True(result.Success);
         Assert.Equal(
-            ChunkDirtyFlags.RenderDirty | ChunkDirtyFlags.SaveDirty | ChunkDirtyFlags.AutoTileDirty | ChunkDirtyFlags.CollisionDirty | ChunkDirtyFlags.LightDirty,
+            ChunkDirtyFlags.RenderDirty | ChunkDirtyFlags.SaveDirty | ChunkDirtyFlags.AutoTileDirty | ChunkDirtyFlags.CollisionDirty | ChunkDirtyFlags.LightDirty | ChunkDirtyFlags.LiquidDirty,
             result.DirtyFlagsApplied);
         Assert.Single(changedEvents);
         Assert.Single(placedEvents);

@@ -5,6 +5,7 @@ using TileWorld.Engine.Runtime.AutoTile;
 using TileWorld.Engine.Runtime.Chunks;
 using TileWorld.Engine.Runtime.Contexts;
 using TileWorld.Engine.Runtime.Events;
+using TileWorld.Engine.Runtime.Liquids;
 using TileWorld.Engine.Runtime.Lighting;
 using TileWorld.Engine.Runtime.Objects;
 using TileWorld.Engine.Runtime.Queries;
@@ -33,6 +34,7 @@ internal sealed class TileEditService
     private readonly EntityManager _entityManager;
     private readonly WorldEventBus _eventBus;
     private readonly LightingSystem _lightingSystem;
+    private readonly LiquidSystem _liquidSystem;
     private readonly ObjectManager _objectManager;
     private readonly SupportSystem _supportSystem;
     private readonly WorldQueryService _worldQueryService;
@@ -52,6 +54,7 @@ internal sealed class TileEditService
     /// <param name="entityManager">The optional entity manager used to spawn drops.</param>
     /// <param name="chunkManager">The optional chunk manager used to load missing chunks before writes.</param>
     /// <param name="lightingSystem">The optional lighting system used to invalidate derived light buffers after edits.</param>
+    /// <param name="liquidSystem">The optional liquid system used to invalidate liquid simulation state after edits.</param>
     public TileEditService(
         WorldData worldData,
         ContentRegistry contentRegistry,
@@ -63,7 +66,8 @@ internal sealed class TileEditService
         SupportSystem supportSystem = null,
         EntityManager entityManager = null,
         ChunkManager chunkManager = null,
-        LightingSystem lightingSystem = null)
+        LightingSystem lightingSystem = null,
+        LiquidSystem liquidSystem = null)
     {
         _worldData = worldData;
         _contentRegistry = contentRegistry;
@@ -72,6 +76,7 @@ internal sealed class TileEditService
         _eventBus = eventBus;
         _autoTileSystem = autoTileSystem;
         _lightingSystem = lightingSystem;
+        _liquidSystem = liquidSystem;
         _objectManager = objectManager;
         _supportSystem = supportSystem;
         _entityManager = entityManager;
@@ -338,12 +343,18 @@ internal sealed class TileEditService
         var updatedCell = existingCell with
         {
             ForegroundTileId = newTileId,
+            LiquidType = newIsSolid ? (byte)0 : existingCell.LiquidType,
+            LiquidAmount = newIsSolid ? (byte)0 : existingCell.LiquidAmount,
             Variant = semanticPlacementContext?.VariantHint ?? existingCell.Variant
         };
 
         chunk.SetCell(localCoord.X, localCoord.Y, updatedCell);
 
-        var dirtyFlags = ChunkDirtyFlags.RenderDirty | ChunkDirtyFlags.SaveDirty | ChunkDirtyFlags.AutoTileDirty | ChunkDirtyFlags.LightDirty;
+        var dirtyFlags = ChunkDirtyFlags.RenderDirty |
+                         ChunkDirtyFlags.SaveDirty |
+                         ChunkDirtyFlags.AutoTileDirty |
+                         ChunkDirtyFlags.LightDirty |
+                         ChunkDirtyFlags.LiquidDirty;
         if (oldWasSolid != newIsSolid)
         {
             dirtyFlags |= ChunkDirtyFlags.CollisionDirty;
@@ -360,6 +371,7 @@ internal sealed class TileEditService
 
         _dirtyTracker.MarkNeighborDirtyIfBoundary(coord, neighborDirtyFlags);
         _lightingSystem?.MarkDirty(coord);
+        _liquidSystem?.MarkDirty(coord);
         _autoTileSystem.RefreshAround(coord);
         _supportSystem?.RefreshAfterTileChanged(coord);
 

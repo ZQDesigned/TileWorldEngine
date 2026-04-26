@@ -49,6 +49,16 @@ internal sealed class OverworldWorldGenerator : IWorldGenerator
                 var depthBelowSurface = worldY - surfaceY;
                 if (depthBelowSurface < 0)
                 {
+                    var waterAmount = ResolveSurfaceWaterAmount(context, worldX, worldY, surfaceY);
+                    if (waterAmount > 0)
+                    {
+                        chunk.SetCell(localX, localY, new TileCell
+                        {
+                            LiquidType = (byte)LiquidKind.Water,
+                            LiquidAmount = waterAmount
+                        });
+                    }
+
                     continue;
                 }
 
@@ -185,6 +195,32 @@ internal sealed class OverworldWorldGenerator : IWorldGenerator
         var scatterNoise = SampleNormalizedNoise2D(worldX, worldY, context.Metadata.Seed, wavelength: 9f, salt: 4201);
         var richnessBias = Math.Clamp((depthBelowSurface - 18) / 40f, 0f, 0.12f);
         return clusterNoise > (0.84f - richnessBias) && scatterNoise > 0.45f;
+    }
+
+    private static byte ResolveSurfaceWaterAmount(WorldGenerationContext context, int worldX, int worldY, int surfaceY)
+    {
+        if (Math.Abs(worldX - context.Metadata.SpawnTile.X) <= SpawnProtectedHalfWidth)
+        {
+            return 0;
+        }
+
+        var basinSignal = SampleNormalizedNoise1D(worldX, context.Metadata.Seed, wavelength: 176f, salt: 5101);
+        if (basinSignal < 0.87f)
+        {
+            return 0;
+        }
+
+        var lakeDepth = 2 + (int)MathF.Round(SampleNormalizedNoise1D(worldX, context.Metadata.Seed, wavelength: 44f, salt: 5201) * 4f);
+        var waterTopY = surfaceY - 1;
+        var waterBottomY = waterTopY - lakeDepth + 1;
+        if (worldY < waterBottomY || worldY > waterTopY)
+        {
+            return 0;
+        }
+
+        return worldY == waterTopY
+            ? (byte)140
+            : byte.MaxValue;
     }
 
     private static BiomeDef ResolveBiomeDef(ContentRegistry contentRegistry, int biomeId)

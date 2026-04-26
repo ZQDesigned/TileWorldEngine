@@ -58,4 +58,14 @@ public sealed class WorldRuntimeOptions
     /// Gets the optional fallback generator identifier used when loading legacy worlds with no generator metadata.
     /// </summary>
     public string FallbackGeneratorId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Gets a value indicating whether runtime-managed liquid simulation is enabled.
+    /// </summary>
+    public bool EnableLiquidSimulation { get; init; } = true;
+
+    /// <summary>
+    /// Gets the maximum number of liquid-dirty chunks simulated per frame.
+    /// </summary>
+    public int MaxLiquidChunkSimulationsPerFrame { get; init; } = 4;
 }

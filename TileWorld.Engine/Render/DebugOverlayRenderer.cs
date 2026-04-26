@@ -258,6 +258,8 @@ public sealed class DebugOverlayRenderer
         lines.Add(
             $"VARIANT: {hoveredCell.Variant.ToString(CultureInfo.InvariantCulture)} FLAGS: {hoveredCell.Flags.ToString(CultureInfo.InvariantCulture)}");
         lines.Add($"BG WALL: {hoveredCell.BackgroundWallId.ToString(CultureInfo.InvariantCulture)}");
+        lines.Add(
+            $"LIQUID: {hoveredCell.LiquidType.ToString(CultureInfo.InvariantCulture)}/{hoveredCell.LiquidAmount.ToString(CultureInfo.InvariantCulture)}");
         if (!string.IsNullOrWhiteSpace(hoveredObjectLine))
         {
             lines.Add(hoveredObjectLine);

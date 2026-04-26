@@ -169,6 +169,31 @@ public sealed class WorldRendererTests
         Assert.True(undergroundCommand.Tint.B < 130);
     }
 
+    [Fact]
+    public void Draw_RendersLiquidOverlayFromCellData()
+    {
+        var runtime = CreateRuntime();
+        var camera = new Camera2D(Int2.Zero, new Int2(512, 512));
+        var renderer = CreateRenderer(camera, runtime.ContentRegistry);
+        var renderContext = new FakeRenderContext(camera.ViewportSizePixels);
+
+        runtime.Initialize();
+        runtime.EnsureChunkLoaded(new ChunkCoord(0, 0));
+        runtime.SetForegroundTile(new WorldTileCoord(0, 0), 1);
+        runtime.RemoveForegroundTile(new WorldTileCoord(0, 0));
+        runtime.SetLiquid(new WorldTileCoord(1, 1), (byte)TileWorld.Engine.World.Cells.LiquidKind.Water, 128);
+
+        renderer.RebuildDirtyCaches(runtime);
+        renderer.Draw(runtime, renderContext);
+
+        var liquidCommand = Assert.Single(renderContext.DrawCalls);
+        Assert.Equal(0.08f, liquidCommand.LayerDepth);
+        Assert.Equal(16, liquidCommand.DestinationRectPixels.X);
+        Assert.Equal(16, liquidCommand.DestinationRectPixels.Width);
+        Assert.Equal(8, liquidCommand.DestinationRectPixels.Height);
+        Assert.Equal(24, liquidCommand.DestinationRectPixels.Y);
+    }
+
     private static WorldRuntime CreateRuntime()
     {
         var registry = new ContentRegistry();

@@ -122,6 +122,11 @@ public sealed class WorldRenderer
                 renderContext.DrawSprite(ToScreenSpace(ApplyChunkLighting(command, cache, lightBuffer)));
             }
 
+            foreach (var command in BuildChunkLiquidCommands(runtime, coord, lightBuffer))
+            {
+                renderContext.DrawSprite(ToScreenSpace(command));
+            }
+
             foreach (var command in cache.ForegroundCommands)
             {
                 renderContext.DrawSprite(ToScreenSpace(ApplyChunkLighting(command, cache, lightBuffer)));
@@ -338,6 +343,72 @@ public sealed class WorldRenderer
         return command with
         {
             Tint = command.Tint.MultiplyBrightness(lightLevel)
+        };
+    }
+
+    private IEnumerable<SpriteDrawCommand> BuildChunkLiquidCommands(
+        WorldRuntime runtime,
+        ChunkCoord chunkCoord,
+        ChunkLightBuffer lightBuffer)
+    {
+        if (!runtime.WorldData.TryGetChunk(chunkCoord, out var chunk))
+        {
+            yield break;
+        }
+
+        var chunkOrigin = WorldCoordinateConverter.ToChunkOrigin(chunkCoord);
+
+        for (var localY = 0; localY < ChunkDimensions.Height; localY++)
+        {
+            for (var localX = 0; localX < ChunkDimensions.Width; localX++)
+            {
+                var cell = chunk.GetCell(localX, localY);
+                if (cell.LiquidAmount == 0 || cell.LiquidType == 0)
+                {
+                    continue;
+                }
+
+                if (cell.ForegroundTileId != 0 &&
+                    runtime.ContentRegistry.TryGetTileDef(cell.ForegroundTileId, out var tileDef) &&
+                    tileDef.IsSolid)
+                {
+                    continue;
+                }
+
+                var tilePixelX = (chunkOrigin.X + localX) * _settings.TileSizePixels;
+                var tilePixelY = (chunkOrigin.Y + localY) * _settings.TileSizePixels;
+                var liquidHeight = Math.Max(1, (int)MathF.Round((cell.LiquidAmount / 255f) * _settings.TileSizePixels));
+                var destination = new RectI(
+                    tilePixelX,
+                    tilePixelY + (_settings.TileSizePixels - liquidHeight),
+                    _settings.TileSizePixels,
+                    liquidHeight);
+                var lightLevel = lightBuffer is not null
+                    ? lightBuffer.GetLightLevel(localX, localY)
+                    : (byte)0;
+
+                yield return ApplyLightLevel(
+                    new SpriteDrawCommand(
+                        "debug/white",
+                        new RectI(0, 0, 1, 1),
+                        destination,
+                        ResolveLiquidTint(cell.LiquidType, cell.LiquidAmount),
+                        0.08f),
+                    lightLevel);
+            }
+        }
+    }
+
+    private static ColorRgba32 ResolveLiquidTint(byte liquidType, byte liquidAmount)
+    {
+        var alpha = (byte)Math.Clamp(92 + ((liquidAmount * 136) / 255), 0, 255);
+
+        return liquidType switch
+        {
+            (byte)TileWorld.Engine.World.Cells.LiquidKind.Water => new ColorRgba32(82, 142, 255, alpha),
+            (byte)TileWorld.Engine.World.Cells.LiquidKind.Lava => new ColorRgba32(255, 118, 58, alpha),
+            (byte)TileWorld.Engine.World.Cells.LiquidKind.Honey => new ColorRgba32(238, 186, 78, alpha),
+            _ => new ColorRgba32(82, 142, 255, alpha)
         };
     }
 }

@@ -12,6 +12,7 @@ using TileWorld.Engine.Runtime.Contexts;
 using TileWorld.Engine.Runtime.Edits;
 using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.Runtime.Events;
+using TileWorld.Engine.Runtime.Liquids;
 using TileWorld.Engine.Runtime.Lighting;
 using TileWorld.Engine.Runtime.Objects;
 using TileWorld.Engine.Runtime.Queries;
@@ -20,6 +21,7 @@ using TileWorld.Engine.Runtime.Tracking;
 using TileWorld.Engine.Storage;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Cells;
+using TileWorld.Engine.World.Chunks;
 using TileWorld.Engine.World.Coordinates;
 using TileWorld.Engine.World.Objects;
 using TileWorld.Engine.World.Generation;
@@ -84,10 +86,15 @@ public sealed class WorldRuntime
         ObjectManager = new ObjectManager(contentRegistry, QueryService, DirtyTracker, EventBus, EntityManager);
         SupportSystem = new SupportSystem(ObjectManager, QueryService);
         LightingSystem = new LightingSystem(worldData, contentRegistry, QueryService, DirtyTracker, ObjectManager, EntityManager, _worldGenerator);
+        LiquidSystem = new LiquidSystem(worldData, QueryService, DirtyTracker);
         ObjectManager.AttachLightingSystem(LightingSystem);
         QueryService.AttachObjectManager(ObjectManager);
         ChunkManager?.AttachObjectManager(ObjectManager);
-        EventBus.Subscribe<ChunkActivatedEvent>(evt => LightingSystem.MarkChunkDirty(evt.Coord));
+        EventBus.Subscribe<ChunkActivatedEvent>(evt =>
+        {
+            LightingSystem.MarkChunkDirty(evt.Coord);
+            LiquidSystem.MarkChunkDirty(evt.Coord);
+        });
         EventBus.Subscribe<ChunkUnloadingEvent>(evt => LightingSystem.RemoveChunkBuffer(evt.Coord));
         TileEditService = new TileEditService(
             worldData,
@@ -100,7 +107,8 @@ public sealed class WorldRuntime
             SupportSystem,
             EntityManager,
             ChunkManager,
-            LightingSystem);
+            LightingSystem,
+            LiquidSystem);
     }
 
     /// <summary>
@@ -152,6 +160,8 @@ public sealed class WorldRuntime
 
     internal LightingSystem LightingSystem { get; }
 
+    internal LiquidSystem LiquidSystem { get; }
+
     /// <summary>
     /// Transitions the runtime into the initialized state.
     /// </summary>
@@ -164,6 +174,7 @@ public sealed class WorldRuntime
 
         RestorePersistedEntitiesIfNeeded();
         LightingSystem.MarkAllLoadedChunksDirty();
+        LiquidSystem.MarkAllLoadedChunksDirty();
         _isInitialized = true;
     }
 
@@ -180,6 +191,12 @@ public sealed class WorldRuntime
 
         _lastObservedUpdateTime = frameTime.TotalTime;
         ChunkManager?.Update();
+        if (Options.EnableLiquidSimulation &&
+            LiquidSystem.SimulateStep(GetLiquidSimulationChunkSet(), Options.MaxLiquidChunkSimulationsPerFrame))
+        {
+            _pendingMutationObserved = true;
+        }
+
         EntityManager.Update(frameTime);
         LightingSystem.SyncDynamicLightSources();
         LightingSystem.RebuildDirtyLighting(GetLightingRebuildChunkSet(), MaxLightChunkRebuildsPerFrame);
@@ -451,6 +468,91 @@ public sealed class WorldRuntime
     public bool TryGetLightLevel(WorldTileCoord coord, out byte level)
     {
         return LightingSystem.TryGetLightLevel(coord, out level);
+    }
+
+    /// <summary>
+    /// Attempts to resolve liquid information at a world-tile coordinate.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to inspect.</param>
+    /// <param name="liquidType">The resolved liquid type identifier when a liquid is present.</param>
+    /// <param name="liquidAmount">The resolved liquid amount in the range <c>0..255</c>.</param>
+    /// <returns><see langword="true"/> when a liquid is present in the cell.</returns>
+    public bool TryGetLiquid(WorldTileCoord coord, out byte liquidType, out byte liquidAmount)
+    {
+        if (!IsWithinWorldBounds(coord) ||
+            !TryGetCell(coord, out var cell))
+        {
+            liquidType = 0;
+            liquidAmount = 0;
+            return false;
+        }
+
+        liquidType = cell.LiquidType;
+        liquidAmount = cell.LiquidAmount;
+        return liquidAmount != 0 && liquidType != 0;
+    }
+
+    /// <summary>
+    /// Writes liquid values directly to a world cell.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to update.</param>
+    /// <param name="liquidType">The liquid type identifier. Use <c>0</c> only when <paramref name="liquidAmount"/> is <c>0</c>.</param>
+    /// <param name="liquidAmount">The liquid amount in the range <c>0..255</c>.</param>
+    /// <returns><see langword="true"/> when the write succeeded.</returns>
+    public bool SetLiquid(WorldTileCoord coord, byte liquidType, byte liquidAmount)
+    {
+        if (!IsWithinWorldBounds(coord))
+        {
+            return false;
+        }
+
+        if (liquidAmount == 0)
+        {
+            liquidType = 0;
+        }
+        else if (liquidType == 0)
+        {
+            liquidType = (byte)LiquidKind.Water;
+        }
+
+        if (liquidAmount > 0 && IsSolid(coord))
+        {
+            return false;
+        }
+
+        var chunk = ResolveChunkForLiquidWrite(coord, liquidAmount);
+        if (chunk is null)
+        {
+            return false;
+        }
+
+        var localCoord = QueryService.ToLocalCoord(coord);
+        var cell = chunk.GetCell(localCoord.X, localCoord.Y);
+        if (cell.LiquidType == liquidType && cell.LiquidAmount == liquidAmount)
+        {
+            return true;
+        }
+
+        chunk.SetCell(localCoord.X, localCoord.Y, cell with
+        {
+            LiquidType = liquidType,
+            LiquidAmount = liquidAmount
+        });
+
+        DirtyTracker.MarkLoadedDirty(chunk.Coord, ChunkDirtyFlags.SaveDirty | ChunkDirtyFlags.LiquidDirty);
+        LiquidSystem.MarkDirty(coord);
+        _pendingMutationObserved = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Removes liquid from a world cell.
+    /// </summary>
+    /// <param name="coord">The world-tile coordinate to clear.</param>
+    /// <returns><see langword="true"/> when the clear operation succeeded.</returns>
+    public bool RemoveLiquid(WorldTileCoord coord)
+    {
+        return SetLiquid(coord, liquidType: 0, liquidAmount: 0);
     }
 
     /// <summary>
@@ -839,5 +941,31 @@ public sealed class WorldRuntime
         return activeChunks.Length > 0
             ? activeChunks
             : WorldData.EnumerateLoadedChunks().Select(static chunk => chunk.Coord);
+    }
+
+    private IEnumerable<ChunkCoord> GetLiquidSimulationChunkSet()
+    {
+        var activeChunks = GetActiveChunks().ToArray();
+        return activeChunks.Length > 0
+            ? activeChunks
+            : WorldData.EnumerateLoadedChunks().Select(static chunk => chunk.Coord);
+    }
+
+    private World.Chunks.Chunk ResolveChunkForLiquidWrite(WorldTileCoord coord, byte liquidAmount)
+    {
+        var chunkCoord = QueryService.ToChunkCoord(coord);
+        if (WorldData.TryGetChunk(chunkCoord, out var chunk))
+        {
+            return chunk;
+        }
+
+        if (liquidAmount == 0)
+        {
+            return null;
+        }
+
+        return ChunkManager is not null
+            ? ChunkManager.GetOrLoadChunk(chunkCoord)
+            : WorldData.GetOrCreateChunk(chunkCoord);
     }
 }

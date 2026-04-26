@@ -6,7 +6,7 @@ namespace TileWorld.Engine.Tests.World.Model;
 public sealed class WorldMetadataTests
 {
     [Fact]
-    public void DefaultValues_MatchM2Expectations()
+    public void DefaultValues_MatchRuntimeMetadataBaseline()
     {
         var metadata = new WorldMetadata();
 

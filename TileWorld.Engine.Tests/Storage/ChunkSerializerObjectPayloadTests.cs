@@ -5,7 +5,7 @@ using TileWorld.Engine.World.Objects;
 
 namespace TileWorld.Engine.Tests.Storage;
 
-public sealed class ChunkSerializerPhaseTwoTests
+public sealed class ChunkSerializerObjectPayloadTests
 {
     [Fact]
     public void SerializePayload_RoundtripsAnchoredObjects()

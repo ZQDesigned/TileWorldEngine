@@ -7,7 +7,7 @@ using TileWorld.Engine.World.Coordinates;
 
 namespace TileWorld.Engine.Tests.Runtime.Queries;
 
-public sealed class WorldQueryServicePhaseTwoTests
+public sealed class WorldQueryServiceInactiveChunkTests
 {
     [Fact]
     public void InactiveChunks_RequireAllowInactiveChunkOption()

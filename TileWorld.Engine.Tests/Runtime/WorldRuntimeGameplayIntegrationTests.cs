@@ -16,7 +16,7 @@ using TileWorld.Engine.World.Coordinates;
 
 namespace TileWorld.Engine.Tests.Runtime;
 
-public sealed class WorldRuntimePhaseTwoTests
+public sealed class WorldRuntimeGameplayIntegrationTests
 {
     [Fact]
     public void BackgroundWalls_CanBePlacedAndRemoved()

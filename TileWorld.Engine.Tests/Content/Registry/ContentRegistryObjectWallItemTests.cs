@@ -6,7 +6,7 @@ using TileWorld.Engine.Core.Math;
 
 namespace TileWorld.Engine.Tests.Content.Registry;
 
-public sealed class PhaseTwoContentRegistryTests
+public sealed class ContentRegistryObjectWallItemTests
 {
     [Fact]
     public void Constructor_RegistersDefaultNoWallDefinition()

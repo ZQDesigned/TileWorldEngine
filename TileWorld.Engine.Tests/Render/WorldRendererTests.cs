@@ -1,10 +1,12 @@
 using TileWorld.Engine.Content.Registry;
+using TileWorld.Engine.Content.Items;
 using TileWorld.Engine.Content.Tiles;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Render;
 using TileWorld.Engine.Runtime;
 using TileWorld.Engine.Runtime.Contexts;
+using TileWorld.Engine.Runtime.Entities;
 using TileWorld.Engine.Runtime.Operations;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Chunks;
@@ -192,6 +194,37 @@ public sealed class WorldRendererTests
         Assert.Equal(16, liquidCommand.DestinationRectPixels.Width);
         Assert.Equal(8, liquidCommand.DestinationRectPixels.Height);
         Assert.Equal(24, liquidCommand.DestinationRectPixels.Y);
+    }
+
+    [Fact]
+    public void Draw_DropEntity_UsesItemVisualTextureAndSourceRect()
+    {
+        var runtime = CreateRuntime();
+        runtime.ContentRegistry.RegisterItem(new ItemDef
+        {
+            Id = 9001,
+            Name = "Drop Visual",
+            Visual = new TileVisualDef(
+                "desktop/content-atlas",
+                new RectI(32, 64, 16, 16),
+                ColorRgba32.White,
+                false)
+        });
+
+        var camera = new Camera2D(Int2.Zero, new Int2(512, 512));
+        var renderer = CreateRenderer(camera, runtime.ContentRegistry);
+        var renderContext = new FakeRenderContext(camera.ViewportSizePixels);
+
+        runtime.Initialize();
+        runtime.EnsureChunkLoaded(new ChunkCoord(0, 0));
+        runtime.EntityManager.SpawnDrop(9001, new Float2(2f, 2f), amount: 1);
+
+        renderer.RebuildDirtyCaches(runtime);
+        renderer.Draw(runtime, renderContext);
+
+        var dropCommand = Assert.Single(renderContext.DrawCalls, command => command.LayerDepth == 0.45f);
+        Assert.Equal("desktop/content-atlas", dropCommand.TextureKey);
+        Assert.Equal(new RectI(32, 64, 16, 16), dropCommand.SourceRect);
     }
 
     private static WorldRuntime CreateRuntime()

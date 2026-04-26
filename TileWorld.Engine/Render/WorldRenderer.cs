@@ -22,6 +22,7 @@ namespace TileWorld.Engine.Render;
 /// </remarks>
 public sealed class WorldRenderer
 {
+    private const byte MinVisibleLiquidAmount = 12;
     private readonly ChunkRenderCacheBuilder _cacheBuilder;
     private readonly Dictionary<ChunkCoord, ChunkRenderCache> _chunkRenderCaches = new();
     private readonly WorldRenderSettings _settings;
@@ -239,40 +240,36 @@ public sealed class WorldRenderer
                 continue;
             }
 
-            var tint = ResolveEntityTint(runtime, entity);
-            var textureKey = ResolveEntityTextureKey(runtime, entity);
+            var visual = ResolveEntityVisual(runtime, entity);
 
             yield return ToScreenSpace(new SpriteDrawCommand(
-                textureKey,
-                new RectI(0, 0, 1, 1),
+                visual.TextureKey,
+                visual.SourceRect,
                 worldBoundsPixels,
-                tint,
+                visual.Tint,
                 0.45f)).WithLighting(runtime, worldBoundsPixels, _settings);
         }
     }
 
-    private static string ResolveEntityTextureKey(WorldRuntime runtime, Entity entity)
-    {
-        return entity.Type == EntityType.Drop &&
-               runtime.ContentRegistry.TryGetItemDef(entity.ItemDefId, out var itemDef)
-            ? itemDef.Visual.TextureKey
-            : "debug/white";
-    }
-
-    private static ColorRgba32 ResolveEntityTint(WorldRuntime runtime, Entity entity)
+    private static (string TextureKey, RectI SourceRect, ColorRgba32 Tint) ResolveEntityVisual(WorldRuntime runtime, Entity entity)
     {
         if (entity.Type == EntityType.Drop &&
             runtime.ContentRegistry.TryGetItemDef(entity.ItemDefId, out var itemDef))
         {
-            return itemDef.Visual.Tint;
+            return (itemDef.Visual.TextureKey, itemDef.Visual.SourceRect, itemDef.Visual.Tint);
         }
 
-        return entity.Type switch
+        if (entity.Type == EntityType.Player)
         {
-            EntityType.Player => new ColorRgba32(70, 170, 255),
-            EntityType.Drop => new ColorRgba32(255, 240, 140),
-            _ => ColorRgba32.White
-        };
+            return ("debug/white", new RectI(0, 0, 1, 1), new ColorRgba32(70, 170, 255));
+        }
+
+        if (entity.Type == EntityType.Drop)
+        {
+            return ("debug/white", new RectI(0, 0, 1, 1), new ColorRgba32(255, 240, 140));
+        }
+
+        return ("debug/white", new RectI(0, 0, 1, 1), ColorRgba32.White);
     }
 
     private static bool Intersects(RectI left, RectI right)
@@ -363,7 +360,7 @@ public sealed class WorldRenderer
             for (var localX = 0; localX < ChunkDimensions.Width; localX++)
             {
                 var cell = chunk.GetCell(localX, localY);
-                if (cell.LiquidAmount == 0 || cell.LiquidType == 0)
+                if (cell.LiquidAmount < MinVisibleLiquidAmount || cell.LiquidType == 0)
                 {
                     continue;
                 }
@@ -377,7 +374,11 @@ public sealed class WorldRenderer
 
                 var tilePixelX = (chunkOrigin.X + localX) * _settings.TileSizePixels;
                 var tilePixelY = (chunkOrigin.Y + localY) * _settings.TileSizePixels;
-                var liquidHeight = Math.Max(1, (int)MathF.Round((cell.LiquidAmount / 255f) * _settings.TileSizePixels));
+                var liquidHeight = (int)MathF.Round((cell.LiquidAmount / 255f) * _settings.TileSizePixels);
+                if (liquidHeight <= 0)
+                {
+                    continue;
+                }
                 var destination = new RectI(
                     tilePixelX,
                     tilePixelY + (_settings.TileSizePixels - liquidHeight),

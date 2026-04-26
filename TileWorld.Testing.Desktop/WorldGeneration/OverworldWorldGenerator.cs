@@ -218,9 +218,8 @@ internal sealed class OverworldWorldGenerator : IWorldGenerator
             return 0;
         }
 
-        return worldY == waterTopY
-            ? (byte)140
-            : byte.MaxValue;
+        // Keep generated surface water flush with nearby terrain so ponds look naturally "full".
+        return byte.MaxValue;
     }
 
     private static BiomeDef ResolveBiomeDef(ContentRegistry contentRegistry, int biomeId)

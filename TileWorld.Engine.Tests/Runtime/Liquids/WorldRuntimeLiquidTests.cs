@@ -78,6 +78,56 @@ public sealed class WorldRuntimeLiquidTests
     }
 
     [Fact]
+    public void Update_LiquidPrioritizesDownwardFlow_BeforeSidewaysSpread()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+        runtime.EnsureChunkLoaded(new ChunkCoord(0, 0));
+
+        runtime.SetLiquid(new WorldTileCoord(12, 6), (byte)LiquidKind.Water, 255);
+        runtime.Update(new FrameTime(TimeSpan.FromSeconds(1d / 60d), TimeSpan.FromSeconds(1d / 60d), false));
+
+        runtime.TryGetLiquid(new WorldTileCoord(12, 7), out _, out var belowAmount);
+        var hasLeft = runtime.TryGetLiquid(new WorldTileCoord(11, 6), out _, out var leftAmount);
+        var hasRight = runtime.TryGetLiquid(new WorldTileCoord(13, 6), out _, out var rightAmount);
+
+        Assert.Equal((byte)255, belowAmount);
+        Assert.False(hasLeft && leftAmount > 0);
+        Assert.False(hasRight && rightAmount > 0);
+    }
+
+    [Fact]
+    public void Update_LateralSpread_DoesNotProduceTinyTraceAmounts()
+    {
+        var runtime = CreateRuntime();
+        runtime.Initialize();
+        runtime.EnsureChunkLoaded(new ChunkCoord(0, 0));
+
+        runtime.SetForegroundTile(new WorldTileCoord(14, 7), 1);
+        runtime.SetLiquid(new WorldTileCoord(14, 6), (byte)LiquidKind.Water, 255);
+
+        for (var i = 0; i < 12; i++)
+        {
+            runtime.Update(new FrameTime(TimeSpan.FromSeconds((i + 1) / 60d), TimeSpan.FromSeconds(1d / 60d), false));
+        }
+
+        var chunk = runtime.WorldData.GetOrCreateChunk(new ChunkCoord(0, 0));
+        for (var y = 0; y < ChunkDimensions.Height; y++)
+        {
+            for (var x = 0; x < ChunkDimensions.Width; x++)
+            {
+                var cell = chunk.GetCell(x, y);
+                if (cell.LiquidAmount == 0)
+                {
+                    continue;
+                }
+
+                Assert.True(cell.LiquidAmount >= 8, $"Unexpected tiny liquid amount {cell.LiquidAmount} at ({x},{y}).");
+            }
+        }
+    }
+
+    [Fact]
     public void SetForegroundTile_SolidTileClearsExistingLiquid()
     {
         var runtime = CreateRuntime();

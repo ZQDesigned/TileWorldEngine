@@ -22,6 +22,11 @@ namespace TileWorld.Engine.Runtime.Liquids;
 internal sealed class LiquidSystem
 {
     private const byte MaxLiquidAmount = byte.MaxValue;
+    private const int MaxDownwardTransfer = MaxLiquidAmount;
+    private const int MaxLateralTransfer = 96;
+    private const int MinLateralSourceAmount = 48;
+    private const int MinLateralDifferenceForFlow = 12;
+    private const int LateralTransferQuantum = 8;
     private readonly DirtyTracker _dirtyTracker;
     private readonly WorldQueryService _queryService;
     private readonly HashSet<ChunkCoord> _dirtyChunks = [];
@@ -180,19 +185,49 @@ internal sealed class LiquidSystem
             sourceCell = chunk.GetCell(localX, localY);
         }
 
-        sourceAmount = TransferToNeighbor(worldCoord, sourceLiquidType, sourceAmount, worldCoord.Offset(0, 1), maxTransfer: 64, equalize: false);
+        sourceAmount = TransferToNeighbor(
+            worldCoord,
+            sourceLiquidType,
+            sourceAmount,
+            worldCoord.Offset(0, 1),
+            maxTransfer: MaxDownwardTransfer,
+            equalize: false);
 
-        if (sourceAmount > 1)
+        if (sourceAmount > 1 && ShouldSpreadLaterally(worldCoord, sourceLiquidType, sourceAmount))
         {
             if (preferRightFirst)
             {
-                sourceAmount = TransferToNeighbor(worldCoord, sourceLiquidType, sourceAmount, worldCoord.Offset(1, 0), maxTransfer: 24, equalize: true);
-                sourceAmount = TransferToNeighbor(worldCoord, sourceLiquidType, sourceAmount, worldCoord.Offset(-1, 0), maxTransfer: 24, equalize: true);
+                sourceAmount = TransferToNeighbor(
+                    worldCoord,
+                    sourceLiquidType,
+                    sourceAmount,
+                    worldCoord.Offset(1, 0),
+                    maxTransfer: MaxLateralTransfer,
+                    equalize: true);
+                sourceAmount = TransferToNeighbor(
+                    worldCoord,
+                    sourceLiquidType,
+                    sourceAmount,
+                    worldCoord.Offset(-1, 0),
+                    maxTransfer: MaxLateralTransfer,
+                    equalize: true);
             }
             else
             {
-                sourceAmount = TransferToNeighbor(worldCoord, sourceLiquidType, sourceAmount, worldCoord.Offset(-1, 0), maxTransfer: 24, equalize: true);
-                sourceAmount = TransferToNeighbor(worldCoord, sourceLiquidType, sourceAmount, worldCoord.Offset(1, 0), maxTransfer: 24, equalize: true);
+                sourceAmount = TransferToNeighbor(
+                    worldCoord,
+                    sourceLiquidType,
+                    sourceAmount,
+                    worldCoord.Offset(-1, 0),
+                    maxTransfer: MaxLateralTransfer,
+                    equalize: true);
+                sourceAmount = TransferToNeighbor(
+                    worldCoord,
+                    sourceLiquidType,
+                    sourceAmount,
+                    worldCoord.Offset(1, 0),
+                    maxTransfer: MaxLateralTransfer,
+                    equalize: true);
             }
         }
 
@@ -241,12 +276,13 @@ internal sealed class LiquidSystem
         if (equalize)
         {
             var desired = (sourceAmount - targetAmount) / 2;
-            if (desired <= 0)
+            if (desired < MinLateralDifferenceForFlow)
             {
                 return sourceAmount;
             }
 
             transfer = Math.Min(transfer, desired);
+            transfer = QuantizeLateralTransfer(transfer);
         }
 
         if (transfer <= 0)
@@ -315,5 +351,48 @@ internal sealed class LiquidSystem
     private bool IsBlocking(WorldTileCoord coord)
     {
         return _queryService.IsSolid(coord);
+    }
+
+    private bool ShouldSpreadLaterally(WorldTileCoord sourceCoord, byte sourceLiquidType, int sourceAmount)
+    {
+        if (sourceAmount < MinLateralSourceAmount)
+        {
+            return false;
+        }
+
+        var belowCoord = sourceCoord.Offset(0, 1);
+        if (!_queryService.IsWithinWorldBounds(belowCoord) || IsBlocking(belowCoord))
+        {
+            return true;
+        }
+
+        if (!TryGetLoadedCell(belowCoord, out _, out _, out var belowCell))
+        {
+            return false;
+        }
+
+        if (belowCell.LiquidAmount == MaxLiquidAmount)
+        {
+            return true;
+        }
+
+        if (belowCell.LiquidAmount > 0 &&
+            belowCell.LiquidType != 0 &&
+            belowCell.LiquidType != sourceLiquidType)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static int QuantizeLateralTransfer(int transfer)
+    {
+        if (transfer < LateralTransferQuantum)
+        {
+            return 0;
+        }
+
+        return (transfer / LateralTransferQuantum) * LateralTransferQuantum;
     }
 }

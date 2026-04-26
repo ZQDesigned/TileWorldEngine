@@ -67,5 +67,5 @@ public sealed class WorldRuntimeOptions
     /// <summary>
     /// Gets the maximum number of liquid-dirty chunks simulated per frame.
     /// </summary>
-    public int MaxLiquidChunkSimulationsPerFrame { get; init; } = 4;
+    public int MaxLiquidChunkSimulationsPerFrame { get; init; } = 8;
 }

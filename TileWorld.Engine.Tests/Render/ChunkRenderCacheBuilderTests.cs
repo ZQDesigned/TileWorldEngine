@@ -62,6 +62,17 @@ public sealed class ChunkRenderCacheBuilderTests
     public void Build_ForBackgroundWallProducesBackgroundCommand()
     {
         var registry = new ContentRegistry();
+        registry.RegisterTile(new TileDef
+        {
+            Id = 2,
+            Name = "Stone",
+            Category = "Terrain",
+            Visual = new TileVisualDef(
+                "debug/white",
+                new RectI(0, 0, 1, 1),
+                new ColorRgba32(130, 130, 130),
+                false)
+        });
         registry.RegisterWall(new WallDef
         {
             Id = 1,
@@ -77,14 +88,18 @@ public sealed class ChunkRenderCacheBuilderTests
         var chunk = new Chunk(new ChunkCoord(0, 0));
         chunk.SetCell(2, 3, new TileCell
         {
-            BackgroundWallId = 1
+            BackgroundWallId = 1,
+            ForegroundTileId = 2
         });
 
         var cache = builder.Build(chunk, 1);
         var command = Assert.Single(cache.BackgroundCommands);
+        var foregroundCommand = Assert.Single(cache.ForegroundCommands);
 
         Assert.Equal(new RectI(32, 48, 16, 16), command.DestinationRectPixels);
         Assert.Equal(new ColorRgba32(90, 90, 90, 160), command.Tint);
+        Assert.InRange(command.LayerDepth, 0f, 1f);
+        Assert.True(command.LayerDepth < foregroundCommand.LayerDepth);
     }
 
     private static ChunkRenderCacheBuilder CreateBuilder()

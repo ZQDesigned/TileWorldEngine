@@ -154,7 +154,7 @@ internal sealed class TileEditService
             return false;
         }
 
-        return SetBackgroundWallCore(coord, wallId);
+        return SetBackgroundWallCore(coord, wallId, spawnDropOnRemoval: false);
     }
 
     /// <summary>
@@ -170,7 +170,7 @@ internal sealed class TileEditService
         }
 
         var currentCell = _worldQueryService.GetCell(coord);
-        return currentCell.BackgroundWallId != 0 && SetBackgroundWallCore(coord, 0);
+        return currentCell.BackgroundWallId != 0 && SetBackgroundWallCore(coord, 0, spawnDropOnRemoval: true);
     }
 
     /// <summary>
@@ -406,7 +406,7 @@ internal sealed class TileEditService
         return result;
     }
 
-    private bool SetBackgroundWallCore(WorldTileCoord coord, ushort wallId)
+    private bool SetBackgroundWallCore(WorldTileCoord coord, ushort wallId, bool spawnDropOnRemoval)
     {
         var chunk = ResolveChunkForWallWrite(coord, wallId);
         if (chunk is null)
@@ -416,6 +416,7 @@ internal sealed class TileEditService
 
         var localCoord = _worldQueryService.ToLocalCoord(coord);
         var existingCell = chunk.GetCell(localCoord.X, localCoord.Y);
+        var previousWallId = existingCell.BackgroundWallId;
         if (existingCell.BackgroundWallId == wallId)
         {
             return true;
@@ -424,6 +425,19 @@ internal sealed class TileEditService
         chunk.SetCell(localCoord.X, localCoord.Y, existingCell with { BackgroundWallId = wallId });
         _dirtyTracker.MarkDirty(chunk.Coord, ChunkDirtyFlags.RenderDirty | ChunkDirtyFlags.SaveDirty | ChunkDirtyFlags.LightDirty);
         _lightingSystem?.MarkDirty(coord);
+
+        if (spawnDropOnRemoval &&
+            wallId == 0 &&
+            previousWallId != 0 &&
+            _entityManager is not null &&
+            _contentRegistry.TryGetWallDef(previousWallId, out var removedWallDef) &&
+            removedWallDef.BreakDropItemId != 0)
+        {
+            _entityManager.SpawnDrop(
+                removedWallDef.BreakDropItemId,
+                new TileWorld.Engine.Core.Math.Float2(coord.X + 0.5f, coord.Y + 0.5f));
+        }
+
         return true;
     }
 

@@ -58,7 +58,7 @@ internal sealed class MonoGameRenderContext : IRenderContext
             0f,
             Vector2.Zero,
             SpriteEffects.None,
-            command.LayerDepth);
+            MathHelper.Clamp(command.LayerDepth, 0f, 1f));
     }
 
     public void EndFrame()

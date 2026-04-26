@@ -65,7 +65,7 @@ public sealed class ChunkRenderCacheBuilder
                         wallDef.Visual.SourceRect,
                         destinationRectPixels,
                         wallDef.Visual.Tint,
-                        -0.1f));
+                        0.05f));
                 }
 
                 if (cell.ForegroundTileId != 0 &&
@@ -76,7 +76,7 @@ public sealed class ChunkRenderCacheBuilder
                         ResolveSourceRect(tileDef.Visual, cell.Variant),
                         destinationRectPixels,
                         tileDef.Visual.Tint,
-                        0f));
+                        0.1f));
                 }
             }
         }

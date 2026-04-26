@@ -22,6 +22,8 @@ public sealed class WorldRuntimePhaseTwoTests
     public void BackgroundWalls_CanBePlacedAndRemoved()
     {
         var runtime = CreateRuntime();
+        var dropEvents = new List<DropSpawnedEvent>();
+        runtime.Subscribe<DropSpawnedEvent>(dropEvents.Add);
 
         runtime.Initialize();
 
@@ -29,6 +31,8 @@ public sealed class WorldRuntimePhaseTwoTests
         Assert.True(runtime.HasBackgroundWall(new WorldTileCoord(2, 3)));
         Assert.True(runtime.RemoveBackgroundWall(new WorldTileCoord(2, 3)));
         Assert.False(runtime.HasBackgroundWall(new WorldTileCoord(2, 3)));
+        var dropEvent = Assert.Single(dropEvents);
+        Assert.Equal(1101, dropEvent.ItemDefId);
     }
 
     [Fact]
@@ -268,12 +272,19 @@ public sealed class WorldRuntimePhaseTwoTests
         {
             Id = 1,
             Name = "Stone Wall",
-            CountsAsRoomWall = true
+            CountsAsRoomWall = true,
+            BreakDropItemId = 1101
         });
         registry.RegisterItem(new ItemDef
         {
             Id = 1001,
             Name = "Stone Block"
+        });
+        registry.RegisterItem(new ItemDef
+        {
+            Id = 1101,
+            Name = "Stone Wall",
+            PlaceWallId = 1
         });
         registry.RegisterItem(new ItemDef
         {

@@ -42,7 +42,8 @@ public sealed class ContentRegistry
             Name = "NoWall",
             AutoTileGroupId = 0,
             CountsAsRoomWall = false,
-            ObscuresBackground = false
+            ObscuresBackground = false,
+            BreakDropItemId = 0
         });
     }
 

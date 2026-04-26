@@ -36,4 +36,9 @@ public sealed class WallDef
     /// Gets the visual metadata used by render backends to draw this wall.
     /// </summary>
     public TileVisualDef Visual { get; init; } = TileVisualDef.Default;
+
+    /// <summary>
+    /// Gets the item definition identifier dropped when this wall is removed through gameplay semantics.
+    /// </summary>
+    public int BreakDropItemId { get; init; }
 }

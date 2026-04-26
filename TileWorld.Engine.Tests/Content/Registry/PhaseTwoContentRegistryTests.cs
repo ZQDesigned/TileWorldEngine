@@ -34,13 +34,15 @@ public sealed class PhaseTwoContentRegistryTests
         var itemDef = new ItemDef
         {
             Id = 900,
-            Name = "Crate Item"
+            Name = "Crate Item",
+            PlaceObjectDefId = 100
         };
         var wallDef = new WallDef
         {
             Id = 7,
             Name = "Stone Wall",
-            CountsAsRoomWall = true
+            CountsAsRoomWall = true,
+            BreakDropItemId = 901
         };
 
         registry.RegisterObject(objectDef);
@@ -50,5 +52,7 @@ public sealed class PhaseTwoContentRegistryTests
         Assert.Same(objectDef, registry.GetObjectDef(100));
         Assert.Same(itemDef, registry.GetItemDef(900));
         Assert.Same(wallDef, registry.GetWallDef(7));
+        Assert.Equal(100, registry.GetItemDef(900).PlaceObjectDefId);
+        Assert.Equal(901, registry.GetWallDef(7).BreakDropItemId);
     }
 }

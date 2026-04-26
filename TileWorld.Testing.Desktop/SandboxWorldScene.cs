@@ -41,12 +41,15 @@ internal sealed class SandboxWorldScene : IEngineScene
     private const int StoneBlockItemId = 1001;
     private const int DirtBlockItemId = 1002;
     private const int BrickBlockItemId = 1003;
+    private const int StoneWallItemId = 1101;
+    private const int DirtWallItemId = 1102;
+    private const int BrickWallItemId = 1103;
     private const int CrateItemId = 2001;
     private const int BenchItemId = 2002;
     private const int LampItemId = 2003;
-    private readonly ushort[] _tilePalette = [StoneTileId, DirtTileId, BrickTileId];
-    private readonly ushort[] _wallPalette = [StoneWallId, DirtWallId, BrickWallId];
-    private readonly int[] _objectPalette = [CrateObjectDefId, BenchObjectDefId, LampObjectDefId];
+    private readonly int[] _tilePalette = [StoneBlockItemId, DirtBlockItemId, BrickBlockItemId];
+    private readonly int[] _wallPalette = [StoneWallItemId, DirtWallItemId, BrickWallItemId];
+    private readonly int[] _objectPalette = [CrateItemId, BenchItemId, LampItemId];
     private readonly Dictionary<int, int> _collectedItemCounts = new();
     private readonly DebugBitmapFont5x7 _font = new();
     private readonly Func<IEngineScene> _menuSceneFactory;
@@ -288,6 +291,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             AutoTileGroupId = 0,
             CountsAsRoomWall = true,
             ObscuresBackground = true,
+            BreakDropItemId = StoneWallItemId,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(110, 110, 110, 160), false)
         });
         _contentRegistry.RegisterWall(new WallDef
@@ -297,6 +301,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             AutoTileGroupId = 0,
             CountsAsRoomWall = true,
             ObscuresBackground = true,
+            BreakDropItemId = DirtWallItemId,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(117, 88, 58, 155), false)
         });
         _contentRegistry.RegisterWall(new WallDef
@@ -306,6 +311,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             AutoTileGroupId = 0,
             CountsAsRoomWall = true,
             ObscuresBackground = true,
+            BreakDropItemId = BrickWallItemId,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(148, 52, 44, 170), false)
         });
     }
@@ -338,36 +344,63 @@ internal sealed class SandboxWorldScene : IEngineScene
         {
             Id = StoneBlockItemId,
             Name = "Stone Block",
+            PlaceTileId = StoneTileId,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(125, 125, 125), false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = DirtBlockItemId,
             Name = "Dirt Block",
+            PlaceTileId = DirtTileId,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(139, 103, 68), false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = BrickBlockItemId,
             Name = "Brick Block",
+            PlaceTileId = BrickTileId,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(180, 70, 60), false)
+        });
+        _contentRegistry.RegisterItem(new ItemDef
+        {
+            Id = StoneWallItemId,
+            Name = "Stone Wall",
+            PlaceWallId = StoneWallId,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(110, 110, 110, 160), false)
+        });
+        _contentRegistry.RegisterItem(new ItemDef
+        {
+            Id = DirtWallItemId,
+            Name = "Dirt Wall",
+            PlaceWallId = DirtWallId,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(117, 88, 58, 155), false)
+        });
+        _contentRegistry.RegisterItem(new ItemDef
+        {
+            Id = BrickWallItemId,
+            Name = "Brick Wall",
+            PlaceWallId = BrickWallId,
+            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(148, 52, 44, 170), false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = CrateItemId,
             Name = "Crate",
+            PlaceObjectDefId = CrateObjectDefId,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(194, 138, 68), false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = BenchItemId,
             Name = "Bench",
+            PlaceObjectDefId = BenchObjectDefId,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(181, 145, 102), false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = LampItemId,
             Name = "Lamp",
+            PlaceObjectDefId = LampObjectDefId,
             Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(255, 227, 117), false)
         });
     }
@@ -645,7 +678,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             case ToolMode.Tile:
                 var placeResult = _worldRuntime.PlaceTile(
                     coord,
-                    _tilePalette[_selectedPaletteIndex],
+                    GetSelectedTileId(),
                     new TilePlacementContext
                     {
                         ActorEntityId = _playerEntityId,
@@ -656,14 +689,14 @@ internal sealed class SandboxWorldScene : IEngineScene
                 break;
 
             case ToolMode.Wall:
-                var wallPlaced = _worldRuntime.SetBackgroundWall(coord, _wallPalette[_selectedPaletteIndex]);
-                EngineDiagnostics.Info($"SetBackgroundWall requested. Success={wallPlaced}, Coord={coord}, Wall={_wallPalette[_selectedPaletteIndex]}.");
+                var wallPlaced = _worldRuntime.SetBackgroundWall(coord, GetSelectedWallId());
+                EngineDiagnostics.Info($"SetBackgroundWall requested. Success={wallPlaced}, Coord={coord}, Wall={GetSelectedWallId()}.");
                 break;
 
             case ToolMode.Object:
                 var objectResult = _worldRuntime.PlaceObject(
                     coord,
-                    _objectPalette[_selectedPaletteIndex],
+                    GetSelectedObjectDefId(),
                     new ObjectPlacementContext
                     {
                         ActorEntityId = _playerEntityId,
@@ -709,9 +742,9 @@ internal sealed class SandboxWorldScene : IEngineScene
     {
         return _toolMode switch
         {
-            ToolMode.Tile => $"TILE {_tilePalette[_selectedPaletteIndex].ToString(CultureInfo.InvariantCulture)} {_contentRegistry.GetTileDef(_tilePalette[_selectedPaletteIndex]).Name.ToUpperInvariant()}",
-            ToolMode.Wall => $"WALL {_wallPalette[_selectedPaletteIndex].ToString(CultureInfo.InvariantCulture)} {_contentRegistry.GetWallDef(_wallPalette[_selectedPaletteIndex]).Name.ToUpperInvariant()}",
-            ToolMode.Object => $"OBJECT {_objectPalette[_selectedPaletteIndex].ToString(CultureInfo.InvariantCulture)} {_contentRegistry.GetObjectDef(_objectPalette[_selectedPaletteIndex]).Name.ToUpperInvariant()}",
+            ToolMode.Tile => $"TILE ITEM {_tilePalette[_selectedPaletteIndex].ToString(CultureInfo.InvariantCulture)} {_contentRegistry.GetItemDef(_tilePalette[_selectedPaletteIndex]).Name.ToUpperInvariant()}",
+            ToolMode.Wall => $"WALL ITEM {_wallPalette[_selectedPaletteIndex].ToString(CultureInfo.InvariantCulture)} {_contentRegistry.GetItemDef(_wallPalette[_selectedPaletteIndex]).Name.ToUpperInvariant()}",
+            ToolMode.Object => $"OBJECT ITEM {_objectPalette[_selectedPaletteIndex].ToString(CultureInfo.InvariantCulture)} {_contentRegistry.GetItemDef(_objectPalette[_selectedPaletteIndex]).Name.ToUpperInvariant()}",
             _ => "UNKNOWN"
         };
     }
@@ -719,7 +752,7 @@ internal sealed class SandboxWorldScene : IEngineScene
     private ushort GetSelectedTileIdForOverlay()
     {
         return _toolMode == ToolMode.Tile
-            ? _tilePalette[_selectedPaletteIndex]
+            ? GetSelectedTileId()
             : (ushort)0;
     }
 
@@ -727,10 +760,25 @@ internal sealed class SandboxWorldScene : IEngineScene
     {
         return _toolMode switch
         {
-            ToolMode.Tile when _contentRegistry.TryGetTileDef(_tilePalette[_selectedPaletteIndex], out var tileDef) => tileDef.EmissiveLight,
-            ToolMode.Object when _contentRegistry.TryGetObjectDef(_objectPalette[_selectedPaletteIndex], out var objectDef) => objectDef.EmissiveLight,
+            ToolMode.Tile when _contentRegistry.TryGetTileDef(GetSelectedTileId(), out var tileDef) => tileDef.EmissiveLight,
+            ToolMode.Object when _contentRegistry.TryGetObjectDef(GetSelectedObjectDefId(), out var objectDef) => objectDef.EmissiveLight,
             _ => 0
         };
+    }
+
+    private ushort GetSelectedTileId()
+    {
+        return _contentRegistry.GetItemDef(_tilePalette[_selectedPaletteIndex]).PlaceTileId;
+    }
+
+    private ushort GetSelectedWallId()
+    {
+        return _contentRegistry.GetItemDef(_wallPalette[_selectedPaletteIndex]).PlaceWallId;
+    }
+
+    private int GetSelectedObjectDefId()
+    {
+        return _contentRegistry.GetItemDef(_objectPalette[_selectedPaletteIndex]).PlaceObjectDefId;
     }
 
     private void ActivatePauseButton(int buttonIndex)

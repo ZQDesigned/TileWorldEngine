@@ -26,4 +26,28 @@ public sealed class ItemDef
     /// Gets the visual metadata used by render backends to draw this item when represented as a world drop.
     /// </summary>
     public TileVisualDef Visual { get; init; } = TileVisualDef.Default;
+
+    /// <summary>
+    /// Gets the foreground tile identifier this item places when used as a tile item.
+    /// </summary>
+    /// <remarks>
+    /// A value of <c>0</c> means the item is not a tile-placement item.
+    /// </remarks>
+    public ushort PlaceTileId { get; init; }
+
+    /// <summary>
+    /// Gets the background wall identifier this item places when used as a wall item.
+    /// </summary>
+    /// <remarks>
+    /// A value of <c>0</c> means the item is not a wall-placement item.
+    /// </remarks>
+    public ushort PlaceWallId { get; init; }
+
+    /// <summary>
+    /// Gets the object definition identifier this item places when used as an object item.
+    /// </summary>
+    /// <remarks>
+    /// A value of <c>0</c> means the item is not an object-placement item.
+    /// </remarks>
+    public int PlaceObjectDefId { get; init; }
 }

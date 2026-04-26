@@ -81,6 +81,8 @@ public sealed class SceneHostApplicationTests
 
     private sealed class FakeHostServices : IEngineHostServices
     {
+        public ITextureBitmapRegistry Textures { get; } = new FakeTextureBitmapRegistry();
+
         public ITextInputService TextInput { get; } = new FakeTextInputService();
 
         public bool ExitRequested { get; private set; }
@@ -88,6 +90,18 @@ public sealed class SceneHostApplicationTests
         public void RequestExit()
         {
             ExitRequested = true;
+        }
+    }
+
+    private sealed class FakeTextureBitmapRegistry : ITextureBitmapRegistry
+    {
+        public bool HasTexture(string textureKey)
+        {
+            return false;
+        }
+
+        public void RegisterTextureBitmap(string textureKey, TextureBitmapRgba32 bitmap)
+        {
         }
     }
 

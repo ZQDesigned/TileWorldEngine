@@ -8,6 +8,7 @@ using TileWorld.Engine.Core.Diagnostics;
 using TileWorld.Engine.Core.Math;
 using TileWorld.Engine.Hosting;
 using TileWorld.Engine.Input;
+using TileWorld.Engine.Render;
 
 namespace TileWorld.Engine.Hosting.MonoGame;
 
@@ -52,7 +53,7 @@ internal sealed class MonoGameHostGame : Game
             Window.Title = _options.WindowTitle;
             EngineDiagnostics.Configure(new DebugOutputDiagnosticSink());
             EngineDiagnostics.Info("MonoGame compatibility host initialized.");
-            _hostServices = new MonoGameHostServices(this, _textInputService);
+            _hostServices = new MonoGameHostServices(this, _textInputService, () => _textureCatalog);
             if (_application is IHostedEngineApplication hostedApplication)
             {
                 hostedApplication.SetHostServices(_hostServices);
@@ -223,18 +224,46 @@ internal sealed class MonoGameHostGame : Game
     private sealed class MonoGameHostServices : IEngineHostServices
     {
         private readonly Game _game;
+        private readonly Func<MonoGameTextureCatalog> _textureCatalogAccessor;
+        private readonly ITextureBitmapRegistry _textures;
 
-        public MonoGameHostServices(Game game, MonoGameTextInputService textInputService)
+        public MonoGameHostServices(Game game, MonoGameTextInputService textInputService, Func<MonoGameTextureCatalog> textureCatalogAccessor)
         {
             _game = game ?? throw new ArgumentNullException(nameof(game));
             TextInput = textInputService ?? throw new ArgumentNullException(nameof(textInputService));
+            _textureCatalogAccessor = textureCatalogAccessor ?? throw new ArgumentNullException(nameof(textureCatalogAccessor));
+            _textures = new TextureBitmapRegistry(_textureCatalogAccessor);
         }
+
+        public ITextureBitmapRegistry Textures => _textures;
 
         public ITextInputService TextInput { get; }
 
         public void RequestExit()
         {
             _game.Exit();
+        }
+
+        private sealed class TextureBitmapRegistry : ITextureBitmapRegistry
+        {
+            private readonly Func<MonoGameTextureCatalog> _textureCatalogAccessor;
+
+            public TextureBitmapRegistry(Func<MonoGameTextureCatalog> textureCatalogAccessor)
+            {
+                _textureCatalogAccessor = textureCatalogAccessor;
+            }
+
+            public bool HasTexture(string textureKey)
+            {
+                return _textureCatalogAccessor()?.HasTexture(textureKey) ?? false;
+            }
+
+            public void RegisterTextureBitmap(string textureKey, TextureBitmapRgba32 bitmap)
+            {
+                var textureCatalog = _textureCatalogAccessor()
+                    ?? throw new InvalidOperationException("The MonoGame texture catalog is not ready yet.");
+                textureCatalog.RegisterBitmap(textureKey, bitmap);
+            }
         }
     }
 }

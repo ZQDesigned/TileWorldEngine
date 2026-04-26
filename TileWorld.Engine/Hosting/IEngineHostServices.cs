@@ -6,6 +6,11 @@ namespace TileWorld.Engine.Hosting;
 public interface IEngineHostServices
 {
     /// <summary>
+    /// Gets the host-managed texture registration service.
+    /// </summary>
+    ITextureBitmapRegistry Textures { get; }
+
+    /// <summary>
     /// Gets the host-managed text input service.
     /// </summary>
     ITextInputService TextInput { get; }

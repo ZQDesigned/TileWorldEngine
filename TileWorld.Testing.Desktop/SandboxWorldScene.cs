@@ -22,6 +22,7 @@ using TileWorld.Engine.Storage;
 using TileWorld.Engine.World;
 using TileWorld.Engine.World.Coordinates;
 using TileWorld.Engine.World.Objects;
+using TileWorld.Testing.Desktop.Rendering;
 using TileWorld.Testing.Desktop.WorldGeneration;
 
 namespace TileWorld.Testing.Desktop;
@@ -60,6 +61,7 @@ internal sealed class SandboxWorldScene : IEngineScene
     private bool _isInitialized;
     private bool _isDebugOverlayEnabled = true;
     private bool _isNewWorld;
+    private bool _isVisualAtlasRegistered;
     private Camera2D _camera = null!;
     private ContentRegistry _contentRegistry = null!;
     private int _playerEntityId;
@@ -90,6 +92,7 @@ internal sealed class SandboxWorldScene : IEngineScene
         }
 
         _sceneHost = sceneHost ?? throw new ArgumentNullException(nameof(sceneHost));
+        _isVisualAtlasRegistered = false;
         _contentRegistry = new ContentRegistry();
         _renderSettings = new WorldRenderSettings();
         _debugOverlayRenderer = new DebugOverlayRenderer(_renderSettings);
@@ -163,6 +166,7 @@ internal sealed class SandboxWorldScene : IEngineScene
         _isDebugOverlayEnabled = true;
         _isPauseMenuOpen = false;
         _isNewWorld = false;
+        _isVisualAtlasRegistered = false;
         _lastFrameInput = FrameInput.Empty;
         _selectedPaletteIndex = 0;
         _selectedPauseButtonIndex = 0;
@@ -200,6 +204,8 @@ internal sealed class SandboxWorldScene : IEngineScene
         {
             return;
         }
+
+        EnsureVisualAtlasRegistered();
 
         _camera.ViewportSizePixels = renderContext.ViewportSizePixels;
         renderContext.Clear(ColorRgba32.CornflowerBlue);
@@ -252,7 +258,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             Hardness = 1,
             BreakDropItemId = StoneBlockItemId,
             AutoTileGroupId = 1,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(125, 125, 125), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.StoneTileBaseRect, ColorRgba32.White, true)
         });
         _contentRegistry.RegisterTile(new TileDef
         {
@@ -265,7 +271,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             Hardness = 1,
             BreakDropItemId = DirtBlockItemId,
             AutoTileGroupId = 2,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(139, 103, 68), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.DirtTileBaseRect, ColorRgba32.White, true)
         });
         _contentRegistry.RegisterTile(new TileDef
         {
@@ -278,7 +284,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             Hardness = 1,
             BreakDropItemId = BrickBlockItemId,
             AutoTileGroupId = 3,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(180, 70, 60), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.BrickTileBaseRect, ColorRgba32.White, true)
         });
     }
 
@@ -292,7 +298,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             CountsAsRoomWall = true,
             ObscuresBackground = true,
             BreakDropItemId = StoneWallItemId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(110, 110, 110, 160), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.StoneWallRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterWall(new WallDef
         {
@@ -302,7 +308,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             CountsAsRoomWall = true,
             ObscuresBackground = true,
             BreakDropItemId = DirtWallItemId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(117, 88, 58, 155), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.DirtWallRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterWall(new WallDef
         {
@@ -312,7 +318,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             CountsAsRoomWall = true,
             ObscuresBackground = true,
             BreakDropItemId = BrickWallItemId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(148, 52, 44, 170), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.BrickWallRect, ColorRgba32.White, false)
         });
     }
 
@@ -345,63 +351,63 @@ internal sealed class SandboxWorldScene : IEngineScene
             Id = StoneBlockItemId,
             Name = "Stone Block",
             PlaceTileId = StoneTileId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(125, 125, 125), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.StoneBlockItemRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = DirtBlockItemId,
             Name = "Dirt Block",
             PlaceTileId = DirtTileId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(139, 103, 68), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.DirtBlockItemRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = BrickBlockItemId,
             Name = "Brick Block",
             PlaceTileId = BrickTileId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(180, 70, 60), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.BrickBlockItemRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = StoneWallItemId,
             Name = "Stone Wall",
             PlaceWallId = StoneWallId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(110, 110, 110, 160), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.StoneWallItemRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = DirtWallItemId,
             Name = "Dirt Wall",
             PlaceWallId = DirtWallId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(117, 88, 58, 155), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.DirtWallItemRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = BrickWallItemId,
             Name = "Brick Wall",
             PlaceWallId = BrickWallId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(148, 52, 44, 170), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.BrickWallItemRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = CrateItemId,
             Name = "Crate",
             PlaceObjectDefId = CrateObjectDefId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(194, 138, 68), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.CrateItemRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = BenchItemId,
             Name = "Bench",
             PlaceObjectDefId = BenchObjectDefId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(181, 145, 102), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.BenchItemRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterItem(new ItemDef
         {
             Id = LampItemId,
             Name = "Lamp",
             PlaceObjectDefId = LampObjectDefId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(255, 227, 117), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.LampItemRect, ColorRgba32.White, false)
         });
     }
 
@@ -414,7 +420,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             SizeInTiles = new Int2(2, 2),
             RequiresSupport = true,
             BreakDropItemId = CrateItemId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(194, 138, 68), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.CrateObjectRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterObject(new ObjectDef
         {
@@ -423,7 +429,7 @@ internal sealed class SandboxWorldScene : IEngineScene
             SizeInTiles = new Int2(3, 2),
             RequiresSupport = true,
             BreakDropItemId = BenchItemId,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(181, 145, 102), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.BenchObjectRect, ColorRgba32.White, false)
         });
         _contentRegistry.RegisterObject(new ObjectDef
         {
@@ -433,8 +439,19 @@ internal sealed class SandboxWorldScene : IEngineScene
             RequiresSupport = true,
             BreakDropItemId = LampItemId,
             EmissiveLight = 14,
-            Visual = new TileVisualDef(DebugWhiteTextureKey, new RectI(0, 0, 1, 1), new ColorRgba32(255, 227, 117), false)
+            Visual = new TileVisualDef(DesktopContentAtlas.TextureKey, DesktopContentAtlas.LampObjectRect, ColorRgba32.White, false)
         });
+    }
+
+    private void EnsureVisualAtlasRegistered()
+    {
+        if (_isVisualAtlasRegistered)
+        {
+            return;
+        }
+
+        DesktopContentAtlas.EnsureRegistered(_sceneHost.HostServices.Textures);
+        _isVisualAtlasRegistered = true;
     }
 
     private void SubscribeDiagnostics()

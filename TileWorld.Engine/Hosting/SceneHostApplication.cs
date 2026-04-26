@@ -113,6 +113,8 @@ public class SceneHostApplication : IEngineApplication, IHostedEngineApplication
 
     private sealed class NullEngineHostServices : IEngineHostServices
     {
+        public ITextureBitmapRegistry Textures { get; } = new NullTextureBitmapRegistry();
+
         public ITextInputService TextInput { get; } = new NullTextInputService();
 
         public void RequestExit()
@@ -130,6 +132,21 @@ public class SceneHostApplication : IEngineApplication, IHostedEngineApplication
         {
             ArgumentNullException.ThrowIfNull(request);
             return System.Threading.Tasks.Task.FromResult<string>(null);
+        }
+    }
+
+    private sealed class NullTextureBitmapRegistry : ITextureBitmapRegistry
+    {
+        public bool HasTexture(string textureKey)
+        {
+            ArgumentNullException.ThrowIfNull(textureKey);
+            return false;
+        }
+
+        public void RegisterTextureBitmap(string textureKey, Render.TextureBitmapRgba32 bitmap)
+        {
+            ArgumentNullException.ThrowIfNull(textureKey);
+            ArgumentNullException.ThrowIfNull(bitmap);
         }
     }
 }

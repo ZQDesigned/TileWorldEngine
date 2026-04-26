@@ -2,15 +2,18 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using TileWorld.Engine.Render;
 
 namespace TileWorld.Engine.Hosting.MonoGame;
 
 internal sealed class MonoGameTextureCatalog : IDisposable
 {
+    private readonly GraphicsDevice _graphicsDevice;
     private readonly Dictionary<string, Texture2D> _textures = new(StringComparer.Ordinal);
 
     public MonoGameTextureCatalog(GraphicsDevice graphicsDevice)
     {
+        _graphicsDevice = graphicsDevice;
         var debugWhite = new Texture2D(graphicsDevice, 1, 1);
         debugWhite.SetData([Color.White]);
 
@@ -25,6 +28,35 @@ internal sealed class MonoGameTextureCatalog : IDisposable
         }
 
         return texture;
+    }
+
+    public bool HasTexture(string textureKey)
+    {
+        ArgumentNullException.ThrowIfNull(textureKey);
+        return _textures.ContainsKey(textureKey);
+    }
+
+    public void RegisterBitmap(string textureKey, TextureBitmapRgba32 bitmap)
+    {
+        ArgumentNullException.ThrowIfNull(textureKey);
+        ArgumentNullException.ThrowIfNull(bitmap);
+
+        if (_textures.ContainsKey(textureKey))
+        {
+            return;
+        }
+
+        var texture = new Texture2D(_graphicsDevice, bitmap.Width, bitmap.Height);
+        var colors = new Color[bitmap.Width * bitmap.Height];
+        var pixels = bitmap.Pixels;
+        for (var index = 0; index < pixels.Length; index++)
+        {
+            var pixel = pixels[index];
+            colors[index] = new Color(pixel.R, pixel.G, pixel.B, pixel.A);
+        }
+
+        texture.SetData(colors);
+        _textures.Add(textureKey, texture);
     }
 
     public void Dispose()
